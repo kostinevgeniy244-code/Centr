@@ -182,9 +182,12 @@ canvas#overlay {
 
 #video, #canvas {
   position: absolute;
-  top: -9999px;
-  left: -9999px;
-  width: 1px;
-  height: 1px;
-  opacity: 0;
+  top: 0; left: 0;
+  width: 320px;
+  height: 240px;
+  object-fit: cover;
+  border: 4px solid red;
+  z-index: 9999;
+  display: block !important;
+  opacity: 1 !important;
 }
