@@ -1,4 +1,4 @@
-// init.js
+// init.js — выбор тыловой камеры
 let isRunning = false;
 let bestFrameData = null;
 let bestScore = -1;
@@ -8,7 +8,7 @@ let frameCounter = 0;
 const STABLE_THRESHOLD = 20;
 const MIN_CIRCULARITY = 0.85;
 
-// Элементы DOM
+// Элементы DOM (оставь как было)
 const video = document.getElementById('video');
 const canvas = document.getElementById('canvas');
 const overlay = document.getElementById('overlay');
@@ -30,13 +30,9 @@ const valYEl = document.getElementById('valY');
 function setStatus(type, text) {
   statusText.textContent = text;
   statusDot.className = 'dot';
-  if (type === 'ok') {
-    statusDot.classList.add('status-ok');
-  } else if (type === 'warn') {
-    statusDot.classList.add('status-warn');
-  } else {
-    statusDot.classList.add('status-err');
-  }
+  if (type === 'ok') statusDot.classList.add('status-ok');
+  else if (type === 'warn') statusDot.classList.add('status-warn');
+  else statusDot.classList.add('status-err');
 }
 
 function resetMetrics() {
@@ -47,8 +43,23 @@ function resetMetrics() {
   valYEl.textContent = '—';
 }
 
-// Обработчик кнопки
-startBtn.onclick = () => {
+async function getBackCameraDeviceId() {
+  const devices = await navigator.mediaDevices.enumerateDevices();
+  // Ищем камеру, которая не фронтальная
+  const backCam = devices.find(d =>
+    d.kind === 'videoinput' &&
+    !d.label.toLowerCase().includes('front') &&
+    !d.label.toLowerCase().includes('selfie')
+  );
+
+  if (backCam) return backCam.deviceId;
+
+  // Если не нашли «тыловую» по названию, берём первую видеокамеру
+  const anyCam = devices.find(d => d.kind === 'videoinput');
+  return anyCam ? anyCam.deviceId : null;
+}
+
+startBtn.onclick = async () => {
   isRunning = !isRunning;
   if (isRunning) {
     bestFrameData = null;
@@ -57,12 +68,45 @@ startBtn.onclick = () => {
     frameCounter = 0;
     frozenImg.style.display = 'none';
     resetMetrics();
-    setStatus('warn', 'Поиск оптимального кадра...');
-    startBtn.textContent = 'Стоп';
-    startBtn.classList.remove('stopped');
-    startBtn.classList.add('processing');
-    checkAndStartProcessing();
+    setStatus('warn', 'Выбор камеры...');
+
+    try {
+      const deviceId = await getBackCameraDeviceId();
+      if (!deviceId) {
+        throw new Error('Камеры не найдены');
+      }
+
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: {
+          deviceId: { exact: deviceId },
+          width: { ideal: 640 },
+          height: { ideal: 480 }
+        }
+      });
+
+      video.srcObject = stream;
+      video.onloadedmetadata = () => {
+        video.play();
+        setStatus('warn', 'Поиск оптимального кадра...');
+        startBtn.textContent = 'Стоп';
+        startBtn.classList.remove('stopped');
+        startBtn.classList.add('processing');
+        checkAndStartProcessing();
+      };
+    } catch (err) {
+      isRunning = false;
+      console.error(err);
+      setStatus('err', 'Ошибка доступа к камере: ' + err.message);
+      startBtn.textContent = 'Старт (автозаморозка)';
+      startBtn.classList.remove('processing');
+      startBtn.classList.add('stopped');
+    }
   } else {
+    const stream = video.srcObject;
+    if (stream) {
+      stream.getTracks().forEach(track => track.stop());
+      video.srcObject = null;
+    }
     setStatus('ok', 'Остановлено');
     startBtn.textContent = 'Старт (автозаморозка)';
     startBtn.classList.remove('processing');
@@ -72,10 +116,9 @@ startBtn.onclick = () => {
 
 function checkAndStartProcessing() {
   if (!isRunning) return;
-  // Ждём готовности видео
   if (video.readyState < 4 || video.videoWidth === 0 || video.videoHeight === 0) {
     setTimeout(checkAndStartProcessing, 100);
     return;
   }
-  processStream(); // вызов из core.js
+  processStream(); // из core.js
 }
