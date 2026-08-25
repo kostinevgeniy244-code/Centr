@@ -79,8 +79,8 @@ startBtn.onclick = async () => {
       const stream = await navigator.mediaDevices.getUserMedia({
         video: {
           deviceId: { exact: deviceId },
-          width: { ideal: 640 },
-          height: { ideal: 480 }
+          width: { min: 320, max: 1280 },
+          height: { min: 240, max: 720 }
         }
       });
 
