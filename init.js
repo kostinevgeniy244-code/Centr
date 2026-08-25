@@ -8,12 +8,12 @@ let frameCounter = 0;
 const STABLE_THRESHOLD = 20;
 const MIN_CIRCULARITY = 0.85;
 
-// Элементы DOM (оставь как было)
+// Элементы DOM
 const video = document.getElementById('video');
 const canvas = document.getElementById('canvas');
 const overlay = document.getElementById('overlay');
 const ctx = canvas.getContext('2d');
-const oCtx = overlay.getContext('2d');
+const oCtx = overlay.getContext('2d'); // если overlay — это canvas; если div, то это не нужно
 
 const startBtn = document.getElementById('startBtn');
 const statusBar = document.getElementById('statusBar');
@@ -26,28 +26,6 @@ const valNonUniformEl = document.getElementById('valNonUniform');
 const valShiftEl = document.getElementById('valShift');
 const valXEl = document.getElementById('valX');
 const valYEl = document.getElementById('valY');
-function syncSizes() {
-  const w = video.videoWidth || video.clientWidth;
-  const h = video.videoHeight || video.clientHeight;
-
-  // Для canvas важно менять именно атрибуты width/height (не CSS!)
-  canvas.width = w;
-  canvas.height = h;
-
-  // overlay — это div, меняем через стиль
-  overlay.style.width = w + 'px';
-  overlay.style.height = h + 'px';
-
-  // frozenImg тоже должен быть по размеру области
-  frozenImg.style.width = w + 'px';
-  frozenImg.style.height = h + 'px';
-}
-
-// Вызываем при загрузке метаданных и при ресайзе
-video.addEventListener('loadedmetadata', syncSizes);
-window.addEventListener('resize', syncSizes);
-
-
 
 function setStatus(type, text) {
   statusText.textContent = text;
@@ -67,7 +45,6 @@ function resetMetrics() {
 
 async function getBackCameraDeviceId() {
   const devices = await navigator.mediaDevices.enumerateDevices();
-  // Ищем камеру, которая не фронтальная
   const backCam = devices.find(d =>
     d.kind === 'videoinput' &&
     !d.label.toLowerCase().includes('front') &&
@@ -76,9 +53,26 @@ async function getBackCameraDeviceId() {
 
   if (backCam) return backCam.deviceId;
 
-  // Если не нашли «тыловую» по названию, берём первую видеокамеру
   const anyCam = devices.find(d => d.kind === 'videoinput');
   return anyCam ? anyCam.deviceId : null;
+}
+
+// Глобальная функция синхронизации размеров (должна быть видна везде)
+function syncSizes() {
+  // video.videoWidth/Height — реальные размеры потока (важны для canvas)
+  const w = video.videoWidth || video.clientWidth;
+  const h = video.videoHeight || video.clientHeight;
+
+  // Для canvas меняем именно атрибуты width/height (это размер буфера)
+  canvas.width = w;
+  canvas.height = h;
+
+  // overlay — это div, поэтому размеры задаём через style
+  overlay.style.width = w + 'px';
+  overlay.style.height = h + 'px';
+
+  frozenImg.style.width = w + 'px';
+  frozenImg.style.height = h + 'px';
 }
 
 startBtn.onclick = async () => {
@@ -107,8 +101,15 @@ startBtn.onclick = async () => {
       });
 
       video.srcObject = stream;
+
+      // Сбрасываем размеры при каждом новом потоке
+      syncSizes();
+
       video.onloadedmetadata = () => {
         video.play();
+        // Сразу после play ещё раз синхронизируем — размеры могут обновиться
+        syncSizes();
+
         setStatus('warn', 'Поиск оптимального кадра...');
         startBtn.textContent = 'Стоп';
         startBtn.classList.remove('stopped');
@@ -135,6 +136,13 @@ startBtn.onclick = async () => {
     startBtn.classList.add('stopped');
   }
 };
+
+// Слушатель на ресайз окна — чтобы при повороте телефона всё пересчиталось
+window.addEventListener('resize', () => {
+  if (video && video.readyState >= 4) {
+    syncSizes();
+  }
+});
 
 function checkAndStartProcessing() {
   if (!isRunning) return;
