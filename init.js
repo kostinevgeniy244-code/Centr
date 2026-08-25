@@ -26,6 +26,28 @@ const valNonUniformEl = document.getElementById('valNonUniform');
 const valShiftEl = document.getElementById('valShift');
 const valXEl = document.getElementById('valX');
 const valYEl = document.getElementById('valY');
+function syncSizes() {
+  const w = video.videoWidth || video.clientWidth;
+  const h = video.videoHeight || video.clientHeight;
+
+  // Для canvas важно менять именно атрибуты width/height (не CSS!)
+  canvas.width = w;
+  canvas.height = h;
+
+  // overlay — это div, меняем через стиль
+  overlay.style.width = w + 'px';
+  overlay.style.height = h + 'px';
+
+  // frozenImg тоже должен быть по размеру области
+  frozenImg.style.width = w + 'px';
+  frozenImg.style.height = h + 'px';
+}
+
+// Вызываем при загрузке метаданных и при ресайзе
+video.addEventListener('loadedmetadata', syncSizes);
+window.addEventListener('resize', syncSizes);
+
+
 
 function setStatus(type, text) {
   statusText.textContent = text;
