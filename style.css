@@ -24,6 +24,7 @@ body {
 }
 
 .app-wrapper {
+  position: relative;
   width: 100%;
   max-width: 900px;
   background: var(--surface);
@@ -180,15 +181,53 @@ canvas#overlay {
 .metric-nonuniform .metric-value { color: var(--warning); }
 .metric-shift .metric-value { color: var(--danger); }
 
-#video, #canvas {
-  position: static;
-  top: auto; left: auto;
+/* Видео-область: задаёт размер и позицию для всех слоёв */
+.video-area {
+  position: relative;
   width: 100%;
-  max width 640px;
-  aspect-ratio: 4/3;
+  aspect-ratio: 4/3;          /* подбери под камеру: 4/3 или 16/9 */
+  overflow: hidden;
+  background-color: #000;
+  border-radius: 10px;
+  box-shadow: inset 0 2px 8px rgba(0,0,0,0.2);
+}
+
+#video {
+  position: absolute;
+  top: 0; left: 0;
+  width: 100%; height: 100%;
   object-fit: cover;
-  border: 2px solid red;
-  z-index: 9999;
+  z-index: 1;
   display: block;
-  opacity: 1 !important;
+}
+
+#canvas {
+  position: absolute;
+  top: 0; left: 0;
+  width: 100%; height: 100%;
+  z-index: 2;
+  display: none;             /* скрываем, если не нужно видеть буфер */
+}
+
+.image-container {
+  position: absolute;
+  top: 0; left: 0;
+  width: 100%; height: 100%;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+img#frozenImg {
+  position: static;
+  width: 100%; height: 100%;
+  object-fit: contain;
+  display: none;
+}
+
+canvas#overlay {
+  position: absolute;
+  top: 0; left: 0;
+  width: 100%; height: 100%;
+  pointer-events: none;
+  z-index: 3;
 }
