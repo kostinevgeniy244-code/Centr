@@ -7,10 +7,10 @@
     <link rel="stylesheet" href="style.css" />
   </head>
   <body>
-   <div class="app-wrapper">
+<div class="app-wrapper">
   <h1>📏 Замер зазора: дорн/матрица</h1>
 
-  <!-- Панель управления -->
+  <!-- Панель управления (левая колонка на ПК, одна колонка на мобильном) -->
   <div class="controls-panel">
     <div class="input-row">
       <label>Диаметр дорна (мм)</label>
@@ -28,18 +28,22 @@
     </div>
   </div>
 
-  <!-- Область результата + видеопоток -->
+  <!-- Результат (правая колонка) -->
   <div class="result-panel">
-    <!-- Контейнер для видео, canvas и оверлея -->
+    <!-- Область видеопотока со слоями -->
     <div class="video-area">
+      <!-- Фон: видео -->
       <video id="video" autoplay muted playsinline></video>
+      <!-- Буфер для OpenCV -->
       <canvas id="canvas"></canvas>
+      <!-- Контейнер для замороженного кадра и оверлея -->
       <div class="image-container">
         <img id="frozenImg" src="" alt="Результат" />
         <canvas id="overlay"></canvas>
       </div>
     </div>
 
+    <!-- Метрики -->
     <div class="metrics-grid">
       <div class="metric-item metric-gap">
         <span class="metric-value" id="valGap">—</span>
@@ -65,8 +69,8 @@
   </div>
 </div>
 
-<!-- OpenCV -->
 <script src="https://docs.opencv.org/4.8.0/opencv.js"></script>
+
 
 
 <!-- Логика по частям -->
