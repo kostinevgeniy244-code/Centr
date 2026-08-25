@@ -7,67 +7,67 @@
     <link rel="stylesheet" href="style.css" />
   </head>
   <body>
-    <div class="app-wrapper">
-      <h1>📏 Замер зазора: дорн/матрица</h1>
+   <div class="app-wrapper">
+  <h1>📏 Замер зазора: дорн/матрица</h1>
 
-      <!-- Панель управления -->
-      <div class="controls-panel">
-        <div class="input-row">
-          <label>Диаметр дорна (мм)</label>
-          <input type="number" id="dornDiam" value="40" step="0.1" />
-        </div>
-        <div class="input-row">
-          <label>Диаметр матрицы (мм)</label>
-          <input type="number" id="matrDiam" value="50" step="0.1" />
-        </div>
-        <button id="startBtn">Старт (автозаморозка)</button>
+  <!-- Панель управления -->
+  <div class="controls-panel">
+    <div class="input-row">
+      <label>Диаметр дорна (мм)</label>
+      <input type="number" id="dornDiam" value="40" step="0.1" />
+    </div>
+    <div class="input-row">
+      <label>Диаметр матрицы (мм)</label>
+      <input type="number" id="matrDiam" value="50" step="0.1" />
+    </div>
+    <button id="startBtn">Старт (автозаморозка)</button>
 
-        <div class="status-bar" id="statusBar">
-          <span class="dot" id="statusDot"></span>
-          <span id="statusText">Ожидание загрузки OpenCV</span>
-        </div>
-      </div>
+    <div class="status-bar" id="statusBar">
+      <span class="dot" id="statusDot"></span>
+      <span id="statusText">Ожидание загрузки OpenCV</span>
+    </div>
+  </div>
 
-      <!-- Область результата -->
-      <div class="result-panel">
-        <div class="image-container">
-          <img id="frozenImg" src="" alt="Результат" />
-          <canvas id="overlay"></canvas>
-        </div>
-
-        <div class="metrics-grid">
-          <div class="metric-item metric-gap">
-            <span class="metric-value" id="valGap">—</span>
-            <span class="metric-label">Зазор</span>
-          </div>
-          <div class="metric-item metric-nonuniform">
-            <span class="metric-value" id="valNonUniform">—</span>
-            <span class="metric-label">Неравномерность</span>
-          </div>
-          <div class="metric-item metric-shift">
-            <span class="metric-value" id="valShift">—</span>
-            <span class="metric-label">Макс. смещение</span>
-          </div>
-          <div class="metric-item" style="opacity:0.6">
-            <span class="metric-value" id="valX">—</span>
-            <span class="metric-label">Смещение X</span>
-          </div>
-          <div class="metric-item" style="opacity:0.6">
-            <span class="metric-value" id="valY">—</span>
-            <span class="metric-label">Смещение Y</span>
-          </div>
-        </div>
+  <!-- Область результата + видеопоток -->
+  <div class="result-panel">
+    <!-- Контейнер для видео, canvas и оверлея -->
+    <div class="video-area">
+      <video id="video" autoplay muted playsinline></video>
+      <canvas id="canvas"></canvas>
+      <div class="image-container">
+        <img id="frozenImg" src="" alt="Результат" />
+        <canvas id="overlay"></canvas>
       </div>
     </div>
 
-    <!-- Скрытые элементы для обработки -->
-  <div class="app-wrapper">
-    <video id="video" autoplay muted playsinline></video>
-    <canvas id="canvas"></canvas>
+    <div class="metrics-grid">
+      <div class="metric-item metric-gap">
+        <span class="metric-value" id="valGap">—</span>
+        <span class="metric-label">Зазор</span>
+      </div>
+      <div class="metric-item metric-nonuniform">
+        <span class="metric-value" id="valNonUniform">—</span>
+        <span class="metric-label">Неравномерность</span>
+      </div>
+      <div class="metric-item metric-shift">
+        <span class="metric-value" id="valShift">—</span>
+        <span class="metric-label">Макс. смещение</span>
+      </div>
+      <div class="metric-item" style="opacity:0.6">
+        <span class="metric-value" id="valX">—</span>
+        <span class="metric-label">Смещение X</span>
+      </div>
+      <div class="metric-item" style="opacity:0.6">
+        <span class="metric-value" id="valY">—</span>
+        <span class="metric-label">Смещение Y</span>
+      </div>
+    </div>
+  </div>
 </div>
 
 <!-- OpenCV -->
 <script src="https://docs.opencv.org/4.8.0/opencv.js"></script>
+
 
 <!-- Логика по частям -->
 <script src="init.js"></script>
