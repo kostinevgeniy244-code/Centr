@@ -181,13 +181,14 @@ canvas#overlay {
 .metric-shift .metric-value { color: var(--danger); }
 
 #video, #canvas {
-  position: absolute;
-  top: 5; left: 10;
-  width: 640px;
-  height: 480px;
+  position: static;
+  top: auto; left: auto;
+  width: 100%;
+  max width 640px;
+  aspect-ratio: 4/3;
   object-fit: cover;
   border: 2px solid red;
   z-index: 9999;
-  display: block !important;
+  display: block;
   opacity: 1 !important;
 }
