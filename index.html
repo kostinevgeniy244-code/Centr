@@ -11,7 +11,7 @@
   <div class="app-wrapper">
     <h1>📏 Замер зазора: дорн/матрица</h1>
 
-    <!-- Панель управления (только здесь, больше нигде не повторяем!) -->
+    <!-- Панель управления -->
     <div class="controls-panel">
       <div class="input-row">
         <label>Диаметр дорна (мм)</label>
@@ -38,19 +38,16 @@
 
     <!-- Результат -->
     <div class="result-panel">
-      <!-- Область видеопотока -->
+      <!-- Область видеопотока: ЕДИНСТВЕННЫЙ контейнер с размерами -->
       <div class="video-area">
-        <!-- Контейнер для слоев -->
-        <div class="stream-layer-container">
-          <!-- Фон: видеопоток -->
-          <video id="video" autoplay muted playsinline></video>
-          
-          <!-- Буфер для OpenCV (не виден) -->
-          <canvas id="canvas"></canvas>
-          
-          <!-- Оверлей для отрисовки -->
-          <canvas id="overlay"></canvas>
-        </div>
+        <!-- Все слои лежат прямо внутри .video-area -->
+        <video id="video" autoplay muted playsinline></video>
+        
+        <!-- Буфер для OpenCV (не виден визуально, но должен быть в DOM) -->
+        <canvas id="canvas"></canvas>
+        
+        <!-- Оверлей для отрисовки -->
+        <canvas id="overlay"></canvas>
 
         <!-- Замороженный кадр -->
         <img id="frozenImg" src="" alt="Результат" class="frozen-frame" />
@@ -90,9 +87,5 @@
   
   <!-- Логика обработки (ядро) -->
   <script src="core.js"></script>
-  
-  <!-- Расчет результатов -->
-  <!--script src="result.js"></script-->
 </body>
 </html>
-
