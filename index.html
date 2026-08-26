@@ -1,16 +1,7 @@
-<!DOCTYPE html>
-<html lang="ru">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Замер зазора: дорн/матрица</title>
-    <link rel="stylesheet" href="style.css" />
-  </head>
-  <body>
 <div class="app-wrapper">
   <h1>📏 Замер зазора: дорн/матрица</h1>
 
-  <!-- Панель управления (левая колонка на ПК, одна колонка на мобильном) -->
+  <!-- Панель управления -->
   <div class="controls-panel">
     <div class="input-row">
       <label>Диаметр дорна (мм)</label>
@@ -28,19 +19,24 @@
     </div>
   </div>
 
-  <!-- Результат (правая колонка) -->
+  <!-- Результат -->
   <div class="result-panel">
-    <!-- Область видеопотока со слоями -->
+    <!-- Область видеопотока: все слои внутри одного контейнера -->
     <div class="video-area">
-      <!-- Фон: видео -->
-      <video id="video" autoplay muted playsinline></video>
-      <!-- Буфер для OpenCV -->
-      <canvas id="canvas"></canvas>
-      <!-- Контейнер для замороженного кадра и оверлея -->
-      <div class="image-container">
-        <img id="frozenImg" src="" alt="Результат" />
+      <!-- Контейнер, относительно которого позиционируются все слои -->
+      <div class="stream-layer-container">
+        <!-- Фон: видеопоток -->
+        <video id="video" autoplay muted playsinline></video>
+
+        <!-- Буфер для OpenCV (не виден пользователю) -->
+        <canvas id="canvas"></canvas>
+
+        <!-- Оверлей для отрисовки эллипсов и линий -->
         <canvas id="overlay"></canvas>
       </div>
+
+      <!-- Замороженный кадр (показываем только когда нужно) -->
+      <img id="frozenImg" src="" alt="Результат" class="frozen-frame" />
     </div>
 
     <!-- Метрики -->
@@ -68,15 +64,3 @@
     </div>
   </div>
 </div>
-
-<script src="https://docs.opencv.org/4.8.0/opencv.js"></script>
-
-
-
-<!-- Логика по частям -->
-<script src="init.js"></script>
-<script src="core.js"></script>
-<script src="result.js"></script>
-
-  </body>
-</html>
