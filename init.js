@@ -20,8 +20,10 @@ async function initCamera() {
     });
     video.srcObject = stream;
 
-    // Синхронизация размеров при загрузке и при ресайзе
+    // Синхронизация размеров
     syncSizes();
+    
+    // Пересчет при ресайзе окна или загрузке метаданных видео
     window.addEventListener('resize', syncSizes);
     video.addEventListener('loadedmetadata', syncSizes);
 
@@ -33,7 +35,7 @@ async function initCamera() {
 }
 
 function syncSizes() {
-  // Важно: для canvas используем атрибуты width/height (это размер буфера)
+  // ВАЖНО: Для canvas (буфера OpenCV) используем атрибуты width/height
   const w = video.videoWidth || video.clientWidth;
   const h = video.videoHeight || video.clientHeight;
 
@@ -57,5 +59,4 @@ function updateStatus(type, text) {
   }
 }
 
-// Запуск при загрузке страницы
 document.addEventListener('DOMContentLoaded', initCamera);
