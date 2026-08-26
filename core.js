@@ -7,7 +7,7 @@ function initHandlers() {
   const btnStart = document.getElementById('startBtn');
   const btnReset = document.getElementById('resetBtn');
 
-  console.log('🔍 Проверка элементов:', {
+  console.log('🔍 Элементы:', {
     startBtn: btnStart,
     resetBtn: btnReset,
     video: document.getElementById('video'),
@@ -17,7 +17,7 @@ function initHandlers() {
   });
 
   if (!btnStart) {
-    console.error('❌ Не найдена кнопка #startBtn');
+    console.error('❌ #startBtn не найден');
     return;
   }
 
@@ -31,10 +31,10 @@ function initHandlers() {
   });
 
   if (!btnReset) {
-    console.error('❌ Не найдена кнопка #resetBtn — сброс не будет работать');
+    console.error('❌ #resetBtn не найден — сброс не будет работать');
     return;
   } else {
-    console.log('✅ Кнопка сброса найдена, вешаем обработчик');
+    console.log('✅ #resetBtn найден, вешаем обработчик');
     btnReset.addEventListener('click', (e) => {
       e.preventDefault();
       console.log('🔄 Клик Сброс');
@@ -72,13 +72,11 @@ function resetView() {
   const frozenImg = document.getElementById('frozenImg');
   const appWrapper = document.querySelector('.app-wrapper');
 
-  // Гарантированно делаем канвасы видимыми (на случай display:none в CSS)
+  // Гарантированно показываем нужные слои
+  if (video) video.style.display = 'block';
   if (canvas) canvas.style.display = 'block';
   if (overlay) overlay.style.display = 'block';
-
-  if (video) video.style.display = 'block';
   if (frozenImg) frozenImg.style.display = 'none';
-
   if (appWrapper) appWrapper.classList.remove('frozen-mode');
 
   updateButtonState('default', 'Старт (автозаморозка)');
@@ -89,13 +87,10 @@ function resetView() {
 function updateButtonState(mode, text) {
   const btn = document.getElementById('startBtn');
   if (!btn) return;
-
   btn.classList.remove('processing');
   btn.classList.remove('stopped');
-
   if (mode === 'processing') btn.classList.add('processing');
   else if (mode === 'stopped') btn.classList.add('stopped');
-
   btn.textContent = text;
 }
 
@@ -103,7 +98,6 @@ function updateStatus(type, text) {
   const dot = document.getElementById('statusDot');
   const txt = document.getElementById('statusText');
   if (!dot || !txt) return;
-
   dot.className = 'dot ' + (type === 'warn' ? 'status-warn' : (type === 'err' ? 'status-err' : 'status-ok'));
   txt.textContent = text;
 }
@@ -121,19 +115,18 @@ function processFrame() {
     return;
   }
 
-  // ВАЖНО: принудительно делаем канвасы видимыми, чтобы clientWidth/Height были корректны
-  canvas.style.display = 'block';
-  overlay.style.display = 'block';
-
-  const w = video.clientWidth;
-  const h = video.clientHeight;
+  // ВАЖНО: берём размеры у контейнера .video-area
+  const container = video.closest('.video-area');
+  const w = container ? container.clientWidth : video.clientWidth;
+  const h = container ? container.clientHeight : video.clientHeight;
 
   if (w === 0 || h === 0) {
-    console.warn('⚠️ video.clientWidth/Height = 0 — возможно, видео ещё не готово или контейнер имеет 0 высоту');
+    console.warn('⚠️ Размеры области видео = 0. Возможно, контейнер схлопнулся.');
     requestAnimationFrame(processFrame);
     return;
   }
 
+  // Синхронизируем внутренние размеры канвасов
   if (canvas.width !== w || canvas.height !== h) {
     canvas.width = w;
     canvas.height = h;
@@ -147,7 +140,7 @@ function processFrame() {
   ctx.drawImage(video, 0, 0, w, h);
   oCtx.clearRect(0, 0, w, h);
 
-  // Отрисовка эллипсов
+  // Рисуем эллипсы
   oCtx.strokeStyle = '#16a34a';
   oCtx.lineWidth = 3;
   oCtx.beginPath();
@@ -177,16 +170,11 @@ function freezeUI(w, h) {
   const video = document.getElementById('video');
   const canvas = document.getElementById('canvas');
   const overlay = document.getElementById('overlay');
-  const appWrapper = document.querySelector('.app-wrapper');
 
   if (!frozenImg) {
     console.error('❌ frozenImg не найден');
     return;
   }
-
-  // Принудительно делаем канвасы видимыми для корректного drawImage
-  canvas.style.display = 'block';
-  overlay.style.display = 'block';
 
   const tempCanvas = document.createElement('canvas');
   tempCanvas.width = w;
@@ -212,6 +200,7 @@ function freezeUI(w, h) {
   if (overlay) overlay.style.display = 'none';
   frozenImg.style.display = 'block';
 
+  const appWrapper = document.querySelector('.app-wrapper');
   if (appWrapper) appWrapper.classList.add('frozen-mode');
 }
 
