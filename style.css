@@ -131,9 +131,21 @@ button#startBtn.processing { background-color: var(--warning); }
 
 /* Убери .stream-layer-container из расчётов, или сделай его просто обёрткой */
 .stream-layer-container {
+.video-area {
   position: relative;
   width: 100%;
-  /* НЕ задавай здесь height / aspect-ratio, чтобы не было конфликта */
+  aspect-ratio: 4/3; /* подстрой под свою камеру: 16/9, 4/3 и т.д. */
+  overflow: hidden;
+  background-color: #000;
+  border-radius: 10px;
+  box-shadow: inset 0 2px 8px rgba(0,0,0,0.2);
+}
+
+/* .stream-layer-container здесь не нужен для размеров */
+.stream-layer-container {
+  position: relative;
+  width: 100%;
+  /* НЕ задавай height / aspect-ratio */
 }
 
 #video {
@@ -151,8 +163,8 @@ button#startBtn.processing { background-color: var(--warning); }
   position: absolute;
   top: 0; left: 0;
   z-index: 2;
-  display: block; /* важно: не none */
-  /* width/height задаются только через JS (canvas.width/height) */
+  display: block; /* не none */
+  /* width/height задаются только через JS */
 }
 
 canvas#overlay {
@@ -164,14 +176,15 @@ canvas#overlay {
 }
 
 img.frozen-frame {
-  display: none; /* скрыто по умолчанию */
   position: absolute;
   top: 0; left: 0;
   width: 100%;
   height: 100%;
   object-fit: contain;
   z-index: 4;
+  display: none; /* скрыто по умолчанию */
 }
+
 
 /* Область видео: задает размер и фон */
 .video-area {
