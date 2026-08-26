@@ -14,6 +14,48 @@ const canvas = document.getElementById('canvas');
 const overlay = document.getElementById('overlay');
 const ctx = canvas.getContext('2d');
 const oCtx = overlay.getContext('2d'); // если overlay — это canvas; если div, то это не нужно
+// Рисуем все найденные окружности (полупрозрачные) и лучшую (жирную)
+function drawCandidates(candidates, bestIndex) {
+  const ctx = oCtx;
+  const w = canvas.width;
+  const h = canvas.height;
+
+  // Очищаем оверлей
+  ctx.clearRect(0, 0, w, h);
+
+  if (!candidates || candidates.length === 0) return;
+
+  candidates.forEach((c, i) => {
+    const { x, y, r, score } = c;
+
+    ctx.beginPath();
+    ctx.arc(x, y, r, 0, Math.PI * 2);
+
+    if (i === bestIndex) {
+      // Лучшая окружность: жирная, яркая
+      ctx.strokeStyle = '#16a34a';   // success green
+      ctx.lineWidth = 3;
+      ctx.setLineDash([5, 5]);      // опционально: пунктир
+      ctx.stroke();
+
+      // Подпись с score
+      ctx.fillStyle = '#16a34a';
+      ctx.font = '14px Arial';
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'top';
+      const txt = (score * 100).toFixed(1) + '%';
+      ctx.fillText(txt, x + r + 6, y - 12);
+    } else {
+      // Обычные кандидаты: полупрозрачные, тонкие
+      ctx.strokeStyle = 'rgba(255, 128, 0, 0.5)'; // orange, 50% opacity
+      ctx.lineWidth = 1;
+      ctx.setLineDash([]);
+      ctx.stroke();
+    }
+  });
+}
+
+
 
 const startBtn = document.getElementById('startBtn');
 const statusBar = document.getElementById('statusBar');
