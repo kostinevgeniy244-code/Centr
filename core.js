@@ -12,9 +12,8 @@ function initHandlers() {
     return;
   }
 
-  // Обработчик СТАРТ
   btnStart.addEventListener('click', () => {
-    console.log('🖱️ Клик по кнопке Старт');
+    console.log('🖱️ Клик Старт');
     if (isRunning) {
       stopProcessing();
     } else {
@@ -27,10 +26,9 @@ function initHandlers() {
     return;
   }
 
-  // Обработчик СБРОС — самый важный кусок
   btnReset.addEventListener('click', (e) => {
-    e.preventDefault(); // на всякий случай
-    console.log('🔄 Клик по кнопке Сброс — запускаем resetView()');
+    e.preventDefault();
+    console.log('🔄 Клик Сброс');
     resetView();
   });
 }
@@ -43,10 +41,8 @@ document.addEventListener('DOMContentLoaded', () => {
 function startProcessing() {
   isRunning = true;
   frameCount = 0;
-
   updateButtonState('processing', 'Обработка...');
   updateStatus('warn', 'Анализ кадра...');
-
   processFrame();
 }
 
@@ -56,7 +52,7 @@ function stopProcessing() {
 }
 
 function resetView() {
-  console.log('🚀 resetView(): сбрасываем состояние');
+  console.log('🚀 resetView(): сброс состояния');
   isRunning = false;
   frameCount = 0;
 
@@ -69,15 +65,12 @@ function resetView() {
   if (video) video.style.display = 'block';
   if (canvas) canvas.style.display = 'block';
   if (overlay) overlay.style.display = 'block';
-
   if (frozenImg) frozenImg.style.display = 'none';
-
   if (appWrapper) appWrapper.classList.remove('frozen-mode');
 
   updateButtonState('default', 'Старт (автозаморозка)');
   updateStatus('ok', 'Камера готова');
-
-  console.log('✅ resetView(): состояние сброшено, видеопоток должен быть виден');
+  console.log('✅ Состояние сброшено, видеопоток восстановлен');
 }
 
 function updateButtonState(mode, text) {
@@ -87,12 +80,8 @@ function updateButtonState(mode, text) {
   btn.classList.remove('processing');
   btn.classList.remove('stopped');
 
-  if (mode === 'processing') {
-    btn.classList.add('processing');
-  } else if (mode === 'stopped') {
-    btn.classList.add('stopped');
-  }
-  // default — без классов
+  if (mode === 'processing') btn.classList.add('processing');
+  else if (mode === 'stopped') btn.classList.add('stopped');
 
   btn.textContent = text;
 }
@@ -119,29 +108,40 @@ function processFrame() {
     return;
   }
 
+  // ВАЖНО: синхронизируем размеры canvas с реальным отображением видео
+  const displayWidth = video.clientWidth;
+  const displayHeight = video.clientHeight;
+
+  if (canvas.width !== displayWidth || canvas.height !== displayHeight) {
+    canvas.width = displayWidth;
+    canvas.height = displayHeight;
+    overlay.width = displayWidth;
+    overlay.height = displayHeight;
+  }
+
   const ctx = canvas.getContext('2d');
   const oCtx = overlay.getContext('2d');
 
-  ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-  oCtx.clearRect(0, 0, overlay.width, overlay.height);
+  ctx.drawImage(video, 0, 0, displayWidth, displayHeight);
+  oCtx.clearRect(0, 0, displayWidth, displayHeight);
 
-  // тестовая отрисовка
+  // Отрисовка эллипсов (то, что пользователь видит поверх видео)
   oCtx.strokeStyle = '#16a34a';
   oCtx.lineWidth = 3;
   oCtx.beginPath();
-  oCtx.ellipse(canvas.width / 2, canvas.height / 2, 100, 80, 0, 0, Math.PI * 2);
+  oCtx.ellipse(displayWidth / 2, displayHeight / 2, 100, 80, 0, 0, Math.PI * 2);
   oCtx.stroke();
 
   oCtx.strokeStyle = '#2563eb';
   oCtx.lineWidth = 2;
   oCtx.beginPath();
-  oCtx.ellipse(canvas.width / 2, canvas.height / 2, 120, 100, 0, 0, Math.PI * 2);
+  oCtx.ellipse(displayWidth / 2, displayHeight / 2, 120, 100, 0, 0, Math.PI * 2);
   oCtx.stroke();
 
   frameCount++;
   if (frameCount >= 15) {
-    const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-    freezeUI(imageData);
+    // ГЛАВНОЕ ИСПРАВЛЕНИЕ: делаем снимок всей композиции (canvas + overlay)
+    freezeUI(displayWidth, displayHeight);
     calculateMetrics();
     stopProcessing();
     frameCount = 0;
@@ -151,7 +151,7 @@ function processFrame() {
   requestAnimationFrame(processFrame);
 }
 
-function freezeUI(imageData) {
+function freezeUI(w, h) {
   const frozenImg = document.getElementById('frozenImg');
   const video = document.getElementById('video');
   const canvas = document.getElementById('canvas');
@@ -160,11 +160,16 @@ function freezeUI(imageData) {
 
   if (!frozenImg) return;
 
+  // Создаём временный canvas для финального снимка
   const tempCanvas = document.createElement('canvas');
-  tempCanvas.width = imageData.width;
-  tempCanvas.height = imageData.height;
+  tempCanvas.width = w;
+  tempCanvas.height = h;
   const tempCtx = tempCanvas.getContext('2d');
-  tempCtx.putImageData(imageData, 0, 0);
+
+  // Рисуем видео+canvas (фон) и overlay (линии) на одном холсте
+  tempCtx.drawImage(document.getElementById('video'), 0, 0, w, h);
+  tempCtx.drawImage(canvas, 0, 0, w, h);
+  tempCtx.drawImage(overlay, 0, 0, w, h);
 
   tempCanvas.toBlob(blob => {
     if (!blob) return;
@@ -173,6 +178,7 @@ function freezeUI(imageData) {
     frozenImg.onload = () => URL.revokeObjectURL(url);
   }, 'image/png');
 
+  // Скрываем видео и канвасы, показываем замороженный кадр
   if (video) video.style.display = 'none';
   if (canvas) canvas.style.display = 'none';
   if (overlay) overlay.style.display = 'none';
