@@ -7,8 +7,18 @@ function initHandlers() {
   const btnStart = document.getElementById('startBtn');
   const btnReset = document.getElementById('resetBtn');
 
+  // Диагностика: что вообще есть в DOM?
+  console.log('🔍 Проверка элементов:', {
+    startBtn: btnStart,
+    resetBtn: btnReset,
+    video: document.getElementById('video'),
+    canvas: document.getElementById('canvas'),
+    overlay: document.getElementById('overlay'),
+    frozenImg: document.getElementById('frozenImg')
+  });
+
   if (!btnStart) {
-    console.error('❌ Не найдена кнопка #startBtn');
+    console.error('❌ Не найдена кнопка #startBtn — обработка невозможна');
     return;
   }
 
@@ -22,19 +32,20 @@ function initHandlers() {
   });
 
   if (!btnReset) {
-    console.error('❌ Не найдена кнопка #resetBtn');
+    console.error('❌ Не найдена кнопка #resetBtn — сброс не будет работать');
     return;
+  } else {
+    console.log('✅ Кнопка сброса найдена, вешаем обработчик');
+    btnReset.addEventListener('click', (e) => {
+      e.preventDefault();
+      console.log('🔄 Клик Сброс');
+      resetView();
+    });
   }
-
-  btnReset.addEventListener('click', (e) => {
-    e.preventDefault();
-    console.log('🔄 Клик Сброс');
-    resetView();
-  });
 }
 
 document.addEventListener('DOMContentLoaded', () => {
-  console.log('DOM загружен, инициализируем обработчики...');
+  console.log('DOM загружен, инициализируем...');
   initHandlers();
 });
 
@@ -52,7 +63,7 @@ function stopProcessing() {
 }
 
 function resetView() {
-  console.log('🚀 resetView(): сброс состояния');
+  console.log('🚀 resetView(): начало сброса');
   isRunning = false;
   frameCount = 0;
 
@@ -62,15 +73,26 @@ function resetView() {
   const frozenImg = document.getElementById('frozenImg');
   const appWrapper = document.querySelector('.app-wrapper');
 
+  // Проверка: если какого-то элемента нет — сразу в консоль
+  if (!video) console.error('❌ video не найден');
+  if (!canvas) console.error('❌ canvas не найден');
+  if (!overlay) console.error('❌ overlay не найден');
+  if (!frozenImg) console.error('❌ frozenImg не найден');
+
+  // Показываем видео и канвасы
   if (video) video.style.display = 'block';
   if (canvas) canvas.style.display = 'block';
   if (overlay) overlay.style.display = 'block';
+
+  // Скрываем замороженный кадр
   if (frozenImg) frozenImg.style.display = 'none';
+
+  // Убираем класс режима заморозки
   if (appWrapper) appWrapper.classList.remove('frozen-mode');
 
   updateButtonState('default', 'Старт (автозаморозка)');
   updateStatus('ok', 'Камера готова');
-  console.log('✅ Состояние сброшено, видеопоток восстановлен');
+  console.log('✅ resetView(): состояние сброшено');
 }
 
 function updateButtonState(mode, text) {
@@ -103,16 +125,17 @@ function processFrame() {
   const overlay = document.getElementById('overlay');
 
   if (!video || !canvas || !overlay) {
-    console.error('❌ Не найдены video/canvas/overlay');
+    console.error('❌ Элементы не найдены в processFrame');
     stopProcessing();
     return;
   }
 
-  // ВАЖНО: берём именно отображаемые размеры (то, что видит пользователь)
+  // ВАЖНО: берём отображаемые размеры (то, что видит пользователь)
   const w = video.clientWidth;
   const h = video.clientHeight;
 
   // Синхронизируем внутренние размеры канвасов с отображаемыми
+  // Это исправляет проблему «кадр в углу»
   if (canvas.width !== w || canvas.height !== h) {
     canvas.width = w;
     canvas.height = h;
@@ -159,20 +182,26 @@ function freezeUI(w, h) {
   const overlay = document.getElementById('overlay');
   const appWrapper = document.querySelector('.app-wrapper');
 
-  if (!frozenImg) return;
+  if (!frozenImg) {
+    console.error('❌ frozenImg не найден, заморозка невозможна');
+    return;
+  }
 
   const tempCanvas = document.createElement('canvas');
   tempCanvas.width = w;
   tempCanvas.height = h;
   const tempCtx = tempCanvas.getContext('2d');
 
-  // ГЛАВНОЕ: рисуем всё слоями на одном холсте, используя отображаемые размеры
+  // ГЛАВНОЕ: рисуем всё слоями на одном холсте
   tempCtx.drawImage(video, 0, 0, w, h);      // видео
-  tempCtx.drawImage(canvas, 0, 0, w, h);     // фон с кадром
-  tempCtx.drawImage(overlay, 0, 0, w, h);    // линии/эллипсы
+  tempCtx.drawImage(canvas, 0, 0, w, h);     // фон
+  tempCtx.drawImage(overlay, 0, 0, w, h);    // линии
 
   tempCanvas.toBlob(blob => {
-    if (!blob) return;
+    if (!blob) {
+      console.error('❌ toBlob вернул null');
+      return;
+    }
     const url = URL.createObjectURL(blob);
     frozenImg.src = url;
     frozenImg.onload = () => URL.revokeObjectURL(url);
