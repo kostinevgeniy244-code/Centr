@@ -128,15 +128,17 @@ button#startBtn.processing { background-color: var(--warning); }
   position: absolute;
   top: 0; left: 0;
   width: 100%; height: 100%;
-  object-fit: cover;
+  /* ВАЖНО: object-fit: none, чтобы не искажать пропорции */
+  object-fit: contain;
   z-index: 1;
   display: block;
+  background: #000;
 }
 
 #canvas {
   position: absolute;
   top: 0; left: 0;
-  width: 100%; height: 100%;
+  /* width/height будут задаваться через JS (реальные пиксели видео) */
   z-index: 2;
   display: none; /* Скрыт от пользователя */
 }
@@ -144,8 +146,7 @@ button#startBtn.processing { background-color: var(--warning); }
 canvas#overlay {
   position: absolute;
   top: 0; left: 0;
-  width: 100%; height: 100%;
-  pointer-events: none; /* Клики проходят сквозь оверлей */
+  pointer-events: none;
   z-index: 3;
   display: block;
 }
@@ -156,14 +157,14 @@ img#frozenImg {
   width: 100%; height: 100%;
   object-fit: contain;
   z-index: 4;
-  display: none; /* Показываем только при заморозке */
+  display: none;
 }
 
 /* Область видео: задает размер и фон */
 .video-area {
   position: relative;
   width: 100%;
-  aspect-ratio: 4/3; /* Измени на 16/9 если камера широкоформатная */
+  aspect-ratio: 4/3; /* Подстраивай под свою камеру */
   overflow: hidden;
   background-color: #000;
   border-radius: 10px;
