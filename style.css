@@ -214,11 +214,10 @@ button#resetBtn {
   cursor: pointer;
   transition: all 0.2s;
   width: 100%;
+  display: block; /* <-- всегда видна */
 }
 button#resetBtn:hover {
   background-color: #e5e7eb;
   border-color: var(--border);
 }
-/* Скрываем кнопку сброса, когда не в замороженном состоянии (опционально) */
-.app-wrapper.frozen-mode button#resetBtn { display: block; }
-
+/* Строку с .frozen-mode можно вообще удалить из CSS */
