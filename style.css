@@ -201,3 +201,24 @@ img#frozenImg {
 .metric-gap .metric-value { color: var(--primary); }
 .metric-nonuniform .metric-value { color: var(--warning); }
 .metric-shift .metric-value { color: var(--danger); }
+
+button#resetBtn {
+  margin-top: 8px;
+  padding: 12px;
+  background-color: #f3f4f6;
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  font-size: 0.95rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+  width: 100%;
+}
+button#resetBtn:hover {
+  background-color: #e5e7eb;
+  border-color: var(--border);
+}
+/* Скрываем кнопку сброса, когда не в замороженном состоянии (опционально) */
+.app-wrapper.frozen-mode button#resetBtn { display: block; }
+
