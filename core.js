@@ -108,40 +108,41 @@ function processFrame() {
     return;
   }
 
-  // ВАЖНО: синхронизируем размеры canvas с реальным отображением видео
-  const displayWidth = video.clientWidth;
-  const displayHeight = video.clientHeight;
+  // ВАЖНО: берём именно отображаемые размеры (то, что видит пользователь)
+  const w = video.clientWidth;
+  const h = video.clientHeight;
 
-  if (canvas.width !== displayWidth || canvas.height !== displayHeight) {
-    canvas.width = displayWidth;
-    canvas.height = displayHeight;
-    overlay.width = displayWidth;
-    overlay.height = displayHeight;
+  // Синхронизируем внутренние размеры канвасов с отображаемыми
+  if (canvas.width !== w || canvas.height !== h) {
+    canvas.width = w;
+    canvas.height = h;
+    overlay.width = w;
+    overlay.height = h;
   }
 
   const ctx = canvas.getContext('2d');
   const oCtx = overlay.getContext('2d');
 
-  ctx.drawImage(video, 0, 0, displayWidth, displayHeight);
-  oCtx.clearRect(0, 0, displayWidth, displayHeight);
+  // Рисуем видео ровно в отображаемый размер
+  ctx.drawImage(video, 0, 0, w, h);
+  oCtx.clearRect(0, 0, w, h);
 
-  // Отрисовка эллипсов (то, что пользователь видит поверх видео)
+  // Отрисовка эллипсов (поверх видео)
   oCtx.strokeStyle = '#16a34a';
   oCtx.lineWidth = 3;
   oCtx.beginPath();
-  oCtx.ellipse(displayWidth / 2, displayHeight / 2, 100, 80, 0, 0, Math.PI * 2);
+  oCtx.ellipse(w / 2, h / 2, 100, 80, 0, 0, Math.PI * 2);
   oCtx.stroke();
 
   oCtx.strokeStyle = '#2563eb';
   oCtx.lineWidth = 2;
   oCtx.beginPath();
-  oCtx.ellipse(displayWidth / 2, displayHeight / 2, 120, 100, 0, 0, Math.PI * 2);
+  oCtx.ellipse(w / 2, h / 2, 120, 100, 0, 0, Math.PI * 2);
   oCtx.stroke();
 
   frameCount++;
   if (frameCount >= 15) {
-    // ГЛАВНОЕ ИСПРАВЛЕНИЕ: делаем снимок всей композиции (canvas + overlay)
-    freezeUI(displayWidth, displayHeight);
+    freezeUI(w, h);
     calculateMetrics();
     stopProcessing();
     frameCount = 0;
@@ -160,16 +161,15 @@ function freezeUI(w, h) {
 
   if (!frozenImg) return;
 
-  // Создаём временный canvas для финального снимка
   const tempCanvas = document.createElement('canvas');
   tempCanvas.width = w;
   tempCanvas.height = h;
   const tempCtx = tempCanvas.getContext('2d');
 
-  // Рисуем видео+canvas (фон) и overlay (линии) на одном холсте
-  tempCtx.drawImage(document.getElementById('video'), 0, 0, w, h);
-  tempCtx.drawImage(canvas, 0, 0, w, h);
-  tempCtx.drawImage(overlay, 0, 0, w, h);
+  // ГЛАВНОЕ: рисуем всё слоями на одном холсте, используя отображаемые размеры
+  tempCtx.drawImage(video, 0, 0, w, h);      // видео
+  tempCtx.drawImage(canvas, 0, 0, w, h);     // фон с кадром
+  tempCtx.drawImage(overlay, 0, 0, w, h);    // линии/эллипсы
 
   tempCanvas.toBlob(blob => {
     if (!blob) return;
