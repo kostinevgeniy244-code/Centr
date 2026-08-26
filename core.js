@@ -115,6 +115,8 @@ if (typeof cv !== 'undefined') {
 }
 
 function processFrame() {
+  
+  function processFrame() {
   if (!isRunning || !cvReady) return;
 
   const video = document.getElementById('video');
@@ -126,7 +128,6 @@ function processFrame() {
     return;
   }
 
-  // 1. Получаем размеры области видео (НЕ видео тега, а контейнера)
   const container = video.closest('.video-area');
   const w = container ? container.clientWidth : video.clientWidth;
   const h = container ? container.clientHeight : video.clientHeight;
@@ -136,7 +137,6 @@ function processFrame() {
     return;
   }
 
-  // 2. Синхронизируем размеры канвасов (важно для OpenCV и отрисовки)
   if (canvas.width !== w || canvas.height !== h) {
     canvas.width = w;
     canvas.height = h;
@@ -147,151 +147,184 @@ function processFrame() {
   const ctx = canvas.getContext('2d');
   const oCtx = overlay.getContext('2d');
 
-  // Рисуем кадр из видео на canvas (это вход для OpenCV)
+  // 1. Рисуем кадр из видео на canvas (источник данных)
   ctx.drawImage(video, 0, 0, w, h);
 
-  // --- НАЧАЛО РЕАЛЬНОЙ ОБРАБОТКИ OPENCV ---
+  // --- НАЧАЛО OPENCV ОБРАБОТКИ ---
   
-  // Создаем матрицы OpenCV
   let srcMat = new cv.Mat(h, w, cv.CV_8UC4);
   let grayMat = new cv.Mat();
-  let circles = new cv.Mat();
-
+  let blurMat = new cv.Mat();
+  let edgesMat = new cv.Mat();
+  let contours = new cv.MatVector();
+  
   try {
-    // Копируем данные из canvas в матрицу OpenCV
+    // Копируем данные из canvas в матрицу
     const imageData = ctx.getImageData(0, 0, w, h);
     srcMat.data.set(imageData.data);
 
-    // Конвертируем в оттенки серого (для поиска кругов)
+    // Предобработка: Серый -> Размытие (убираем шум) -> Канни (края)
     cv.cvtColor(srcMat, grayMat, cv.COLOR_RGBA2GRAY);
+    cv.GaussianBlur(grayMat, blurMat, new cv.Size(5, 5), 0);
+    
+    // ВАЖНО: пороги для Canny нужно подбирать под освещение.
+    // Для металла с бликами лучше брать высокий нижний порог.
+    cv.Canny(blurMat, edgesMat, 50, 150); 
 
-    // НАСТРОЙКИ ПОИСКА КРУГОВ (Самое важное место!)
-    // param1 и param2 нужно подбирать под качество камеры и освещение
-    // Чем меньше param2, тем больше кругов найдет (но больше ложных)
-    let dp = 1.0; 
-    let minDist = 50; // Минимальное расстояние между центрами кругов
-    let param1 = 50;  // Верхний порог для детектора краев Canny
-    let param2 = 30;  // Аккумулирующий порог (чем меньше, тем чувствительнее)
-    let minRadius = 20; // Минимальный радиус круга в пикселях
-    let maxRadius = 200; // Максимальный радиус
+    // Ищем контуры (все линии на изображении)
+    cv.findContours(edgesMat, contours, new cv.Mat(), cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
 
-    // Ищем круги: HoughCircles(image, circles, method, dp, minDist, param1, param2, minRadius, maxRadius)
-    cv.HoughCircles(grayMat, circles, cv.HOUGH_GRADIENT, dp, minDist, param1, param2, minRadius, maxRadius);
-
-    // Очищаем оверлей перед новой отрисовкой
     oCtx.clearRect(0, 0, w, h);
 
-    // Если круги найдены
-    if (circles.rows > 0) {
-      // circles.data содержит [x, y, radius] для каждого найденного круга
-      // Данные идут подряд: x1, y1, r1, x2, y2, r2...
-      const data = circles.data;
+    let bestMatrix = null;
+    let bestDorn = null;
+
+    // 2. Перебираем все найденные контуры и ищем эллипсы
+    for (let i = 0; i < contours.size(); i++) {
+      let cnt = contours.get(i);
       
-      // Сортируем найденные круги по радиусу (от большего к меньшему)
-      // Это нужно, чтобы первым взять самый большой круг (скорее всего, это матрица)
-      let foundCircles = [];
-      for (let i = 0; i < circles.rows; i++) {
-        let idx = i * 3;
-        foundCircles.push({
-          x: data[idx],
-          y: data[idx + 1],
-          r: data[idx + 2]
-        });
-      }
-      
-      foundCircles.sort((a, b) => b.r - a.r);
+      // Отсекаем слишком мелкие шумы (меньше 50 пикселей)
+      if (cnt.total() < 50) continue;
 
-      // Берем самый большой круг как "Матрицу"
-      let matr = foundCircles;
-      // Берем второй по величине как "Дорн" (если он есть)
-      let dorn = foundCircles.length > 1 ? foundCircles : null;
-
-      // --- ОТРИСОВКА РЕЗУЛЬТАТОВ ---
-      
-      // 1. Рисуем контур Матрицы (Синий)
-      oCtx.beginPath();
-      oCtx.arc(matr.x, matr.y, matr.r, 0, Math.PI * 2);
-      oCtx.strokeStyle = '#2563eb'; // Синий
-      oCtx.lineWidth = 3;
-      oCtx.stroke();
-      
-      // Центр матрицы
-      oCtx.fillStyle = '#2563eb';
-      oCtx.fillRect(matr.x - 4, matr.y - 4, 8, 8);
-
-      // 2. Рисуем контур Дорна (Зеленый), если найден
-      if (dorn) {
-        oCtx.beginPath();
-        oCtx.arc(dorn.x, dorn.y, dorn.r, 0, Math.PI * 2);
-        oCtx.strokeStyle = '#16a34a'; // Зеленый
-        oCtx.lineWidth = 3;
-        oCtx.stroke();
-
-        // Центр дорна
-        oCtx.fillStyle = '#16a34a';
-        oCtx.fillRect(dorn.x - 4, dorn.y - 4, 8, 8);
-
-        // --- РАСЧЕТ МЕТРИК НА ОСНОВЕ НАЙДЕННЫХ КРУГОВ ---
+      // Пытаемся аппроксимировать контур эллипсом
+      // fitEllipse возвращает [center, axes, angle]
+      try {
+        let ellipse = cv.fitEllipse(cnt);
         
-        // 1. Зазор (Gap)
-        // В реальности нужно знать масштаб: сколько пикселей в 1 мм.
-        // Пока сделаем упрощенно: считаем, что пользователь ввел правильные диаметры,
-        // а мы проверяем только геометрию смещения.
-        // Но если нужно считать зазор по пикселям, нужна калибровочная мишень.
-        // Здесь мы просто берем значения из инпутов, но показываем их рядом с объектом.
+        // ellipse.center - {x, y}, ellipse.size - {width, height}
+        // axes - это полуоси. Радиус = width/2
+        
+        // Логика выбора: 
+        // 1. Матрица - самый большой эллипс (или в центре кадра)
+        // 2. Дорн - эллипс поменьше, который находится ВНУТРИ матрицы
+        
+        let radius = Math.max(ellipse.size.width, ellipse.size.height) / 2;
+        
+        // Фильтр по размеру (подстрой под свою камеру, если детали другие)
+        if (radius < 30 || radius > 300) continue; 
+
+        if (!bestMatrix || radius > bestMatrix.radius) {
+          bestMatrix = { ...ellipse, radius: radius };
+        }
+      } catch (e) {
+        // Если fitEllipse не смог построить эллипс (кривой контур), пропускаем
+        continue;
+      }
+    }
+
+    // Если нашли Матрицу, ищем Дорн внутри неё
+    if (bestMatrix) {
+      // Рисуем Матрицу (Синий)
+      drawEllipse(oCtx, bestMatrix, '#2563eb', 3);
+      
+      // Теперь ищем Дорн: ищем контуры, которые лежат внутри bestMatrix
+      for (let i = 0; i < contours.size(); i++) {
+        let cnt = contours.get(i);
+        if (cnt.total() < 30) continue;
+        
+        try {
+          let ellipse = cv.fitEllipse(cnt);
+          let radius = Math.max(ellipse.size.width, ellipse.size.height) / 2;
+          
+          // Дорн должен быть меньше матрицы и находиться внутри неё
+          // Проверка: расстояние между центрами + радиус дорна < радиус матрицы
+          let dist = Math.sqrt(
+            Math.pow(ellipse.center.x - bestMatrix.center.x, 2) + 
+            Math.pow(ellipse.center.y - bestMatrix.center.y, 2)
+          );
+
+          if (radius < bestMatrix.radius * 0.6 && (dist + radius) < bestMatrix.radius) {
+            // Это кандидат на Дорн. Берем самый большой из подходящих
+            if (!bestDorn || radius > bestDorn.radius) {
+              bestDorn = { ...ellipse, radius: radius };
+            }
+          }
+        } catch (e) {
+          continue;
+        }
+      }
+
+      // Рисуем Дорн (Зеленый)
+      if (bestDorn) {
+        drawEllipse(oCtx, bestDorn, '#16a34a', 3);
+        
+        // --- РАСЧЕТ МЕТРИК ---
         
         const dornVal = parseFloat(document.getElementById('dornDiam').value) || 6.7;
         const matrVal = parseFloat(document.getElementById('matrDiam').value) || 10.4;
         
-        // Реальный зазор в мкм
+        // 1. Зазор (Gap) - считаем по введенным данным, так как масштаб пикселей неизвестен без калибровочной мишени
         const gapMkm = ((matrVal - dornVal) * 10).toFixed(2);
         
-        // Неравномерность (разница радиусов в мм, переведенная в условные единицы)
-        // Это примерная логика, так как без калибровки в мм нельзя.
-        const radiusDiffPx = matr.r - dorn.r; 
-        // Допустим, 10 пикселей = 1 мм (это нужно калибровать!)
-        const nonUniformMm = (radiusDiffPx / 10.0).toFixed(3); 
+        // 2. Неравномерность (Non-uniformity)
+        // Считаем как разницу радиусов в пикселях, переведенную в мм.
+        // ВАЖНО: Тебе нужно один раз замерить: сколько пикселей соответствует 1 мм на твоей камере.
+        // Допустим, 1 мм = 25 пикселей (подстрой это число!).
+        const PIXELS_PER_MM = 25; 
+        const radiusDiffPx = bestMatrix.radius - bestDorn.radius;
+        const nonUniformMm = (radiusDiffPx / PIXELS_PER_MM).toFixed(3);
 
-        // Смещение центров (Shift)
-        const shiftX = (matr.x - dorn.x).toFixed(2);
-        const shiftY = (matr.y - dorn.y).toFixed(2);
-        const shiftTotal = Math.sqrt(shiftX*shiftX + shiftY*shiftY).toFixed(2);
+        // 3. Смещение (Shift)
+        const shiftX = bestMatrix.center.x - bestDorn.center.x;
+        const shiftY = bestMatrix.center.y - bestDorn.center.y;
+        const shiftTotal = Math.sqrt(shiftX*shiftX + shiftY*shiftY);
+        
+        // Переводим смещение из пикселей в мм
+        const shiftTotalMm = (shiftTotal / PIXELS_PER_MM).toFixed(2);
+        const shiftXmm = (shiftX / PIXELS_PER_MM).toFixed(2);
+        const shiftYmm = (shiftY / PIXELS_PER_MM).toFixed(2);
 
-        // Выводим в интерфейс
+        // Вывод в UI
         document.getElementById('valGap').textContent = gapMkm + ' мкм';
         document.getElementById('valNonUniform').textContent = nonUniformMm + ' мм';
-        document.getElementById('valShift').textContent = shiftTotal + ' мм';
-        document.getElementById('valX').textContent = shiftX + ' px'; // Или перевести в мм
-        document.getElementById('valY').textContent = shiftY + ' px';
+        document.getElementById('valShift').textContent = shiftTotalMm + ' мм';
+        document.getElementById('valX').textContent = shiftXmm + ' мм';
+        document.getElementById('valY').textContent = shiftYmm + ' мм';
 
       } else {
-        // Если дорн не найден, пишем предупреждение
         document.getElementById('valGap').textContent = '—';
-        document.getElementById('valNonUniform').textContent = 'Не найден дорн';
+        document.getElementById('valNonUniform').textContent = 'Дорн не найден';
         document.getElementById('valShift').textContent = '—';
       }
 
     } else {
-      // Круги не найдены
       document.getElementById('valGap').textContent = '—';
       document.getElementById('valNonUniform').textContent = 'Нет объектов';
       document.getElementById('valShift').textContent = '—';
     }
 
   } catch (err) {
-    console.error('❌ Ошибка OpenCV:', err);
+    console.error('❌ Ошибка обработки:', err);
   } finally {
-    // Освобождаем память (обязательно для OpenCV в браузере)
     srcMat.delete();
     grayMat.delete();
-    circles.delete();
+    blurMat.delete();
+    edgesMat.delete();
+    contours.delete();
   }
 
-  // --- КОНЕЦ OPENCV ---
+  // Вспомогательная функция для отрисовки эллипса из данных fitEllipse
+  function drawEllipse(ctx, ellipse, color, width) {
+    ctx.beginPath();
+    ctx.save();
+    ctx.translate(ellipse.center.x, ellipse.center.y);
+    ctx.rotate(ellipse.angle * Math.PI / 180); // угол в радианы
+    ctx.scale(1, 1); // масштаб осей уже учтен в size
+    
+    // Рисуем эллипс
+    ctx.ellipse(0, 0, ellipse.size.width / 2, ellipse.size.height / 2, 0, 0, Math.PI * 2);
+    
+    ctx.restore();
+    ctx.strokeStyle = color;
+    ctx.lineWidth = width;
+    ctx.stroke();
+    
+    // Рисуем центр
+    ctx.fillStyle = color;
+    ctx.fillRect(ellipse.center.x - 4, ellipse.center.y - 4, 8, 8);
+  }
 
   frameCount++;
-  
-  // Автостоп через N кадров (чтобы не грузить CPU бесконечно)
   if (frameCount >= 15) {
     freezeUI(w, h);
     stopProcessing();
@@ -302,8 +335,6 @@ function processFrame() {
   requestAnimationFrame(processFrame);
 }
 
-
-  
 
 function freezeUI(w, h) {
   const frozenImg = document.getElementById('frozenImg');
