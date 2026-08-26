@@ -23,7 +23,6 @@ async function initCamera() {
       return;
     }
 
-    // Заполняем select
     videoDevices.forEach(device => {
       const option = document.createElement('option');
       option.value = device.deviceId;
@@ -31,7 +30,6 @@ async function initCamera() {
       cameraSelect.appendChild(option);
     });
 
-    // По умолчанию выбираем первую тыльную (если есть слово "back" в label)
     const backCamera = videoDevices.find(d => (d.label || '').toLowerCase().includes('back'));
     if (backCamera) {
       cameraSelect.value = backCamera.deviceId;
@@ -80,12 +78,15 @@ async function restartCamera() {
 }
 
 function syncSizes() {
-  const w = video.videoWidth || video.clientWidth;
-  const h = video.videoHeight || video.clientHeight;
+  // ВАЖНО: canvas.width/height = реальные пиксели видео (для OpenCV и отрисовки)
+  const w = video.videoWidth || 640;
+  const h = video.videoHeight || 480;
 
   canvas.width = w;
   canvas.height = h;
 
+  // overlay и frozenImg будут занимать всю область контейнера,
+  // но рисовать мы будем в координатах w x h
   overlay.style.width = w + 'px';
   overlay.style.height = h + 'px';
 
