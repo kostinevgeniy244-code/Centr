@@ -103,30 +103,40 @@ function updateStatus(type, text) {
 }
 
 function processFrame() {
-  if (!isRunning) return;
+// Глобальная переменная для хранения состояния OpenCV
+let cvReady = false;
+
+// Инициализация OpenCV (вызывается автоматически при загрузке opencv.js)
+if (typeof cv !== 'undefined') {
+  cvReady = true;
+  console.log('✅ OpenCV загружен и готов к работе');
+} else {
+  console.warn('⚠️ OpenCV еще не загружен. Ждем...');
+}
+
+function processFrame() {
+  if (!isRunning || !cvReady) return;
 
   const video = document.getElementById('video');
   const canvas = document.getElementById('canvas');
   const overlay = document.getElementById('overlay');
-
+  
   if (!video || !canvas || !overlay) {
-    console.error('❌ Элементы не найдены в processFrame');
     stopProcessing();
     return;
   }
 
-  // ВАЖНО: берём размеры у контейнера .video-area
+  // 1. Получаем размеры области видео (НЕ видео тега, а контейнера)
   const container = video.closest('.video-area');
   const w = container ? container.clientWidth : video.clientWidth;
   const h = container ? container.clientHeight : video.clientHeight;
 
   if (w === 0 || h === 0) {
-    console.warn('⚠️ Размеры области видео = 0. Возможно, контейнер схлопнулся.');
     requestAnimationFrame(processFrame);
     return;
   }
 
-  // Синхронизируем внутренние размеры канвасов
+  // 2. Синхронизируем размеры канвасов (важно для OpenCV и отрисовки)
   if (canvas.width !== w || canvas.height !== h) {
     canvas.width = w;
     canvas.height = h;
@@ -137,26 +147,153 @@ function processFrame() {
   const ctx = canvas.getContext('2d');
   const oCtx = overlay.getContext('2d');
 
+  // Рисуем кадр из видео на canvas (это вход для OpenCV)
   ctx.drawImage(video, 0, 0, w, h);
-  oCtx.clearRect(0, 0, w, h);
 
-  // Рисуем эллипсы
-  oCtx.strokeStyle = '#16a34a';
-  oCtx.lineWidth = 3;
-  oCtx.beginPath();
-  oCtx.ellipse(w / 2, h / 2, 100, 80, 0, 0, Math.PI * 2);
-  oCtx.stroke();
+  // --- НАЧАЛО РЕАЛЬНОЙ ОБРАБОТКИ OPENCV ---
+  
+  // Создаем матрицы OpenCV
+  let srcMat = new cv.Mat(h, w, cv.CV_8UC4);
+  let grayMat = new cv.Mat();
+  let circles = new cv.Mat();
 
-  oCtx.strokeStyle = '#2563eb';
-  oCtx.lineWidth = 2;
-  oCtx.beginPath();
-  oCtx.ellipse(w / 2, h / 2, 120, 100, 0, 0, Math.PI * 2);
-  oCtx.stroke();
+  try {
+    // Копируем данные из canvas в матрицу OpenCV
+    const imageData = ctx.getImageData(0, 0, w, h);
+    srcMat.data.set(imageData.data);
+
+    // Конвертируем в оттенки серого (для поиска кругов)
+    cv.cvtColor(srcMat, grayMat, cv.COLOR_RGBA2GRAY);
+
+    // НАСТРОЙКИ ПОИСКА КРУГОВ (Самое важное место!)
+    // param1 и param2 нужно подбирать под качество камеры и освещение
+    // Чем меньше param2, тем больше кругов найдет (но больше ложных)
+    let dp = 1.0; 
+    let minDist = 50; // Минимальное расстояние между центрами кругов
+    let param1 = 50;  // Верхний порог для детектора краев Canny
+    let param2 = 30;  // Аккумулирующий порог (чем меньше, тем чувствительнее)
+    let minRadius = 20; // Минимальный радиус круга в пикселях
+    let maxRadius = 200; // Максимальный радиус
+
+    // Ищем круги: HoughCircles(image, circles, method, dp, minDist, param1, param2, minRadius, maxRadius)
+    cv.HoughCircles(grayMat, circles, cv.HOUGH_GRADIENT, dp, minDist, param1, param2, minRadius, maxRadius);
+
+    // Очищаем оверлей перед новой отрисовкой
+    oCtx.clearRect(0, 0, w, h);
+
+    // Если круги найдены
+    if (circles.rows > 0) {
+      // circles.data содержит [x, y, radius] для каждого найденного круга
+      // Данные идут подряд: x1, y1, r1, x2, y2, r2...
+      const data = circles.data;
+      
+      // Сортируем найденные круги по радиусу (от большего к меньшему)
+      // Это нужно, чтобы первым взять самый большой круг (скорее всего, это матрица)
+      let foundCircles = [];
+      for (let i = 0; i < circles.rows; i++) {
+        let idx = i * 3;
+        foundCircles.push({
+          x: data[idx],
+          y: data[idx + 1],
+          r: data[idx + 2]
+        });
+      }
+      
+      foundCircles.sort((a, b) => b.r - a.r);
+
+      // Берем самый большой круг как "Матрицу"
+      let matr = foundCircles;
+      // Берем второй по величине как "Дорн" (если он есть)
+      let dorn = foundCircles.length > 1 ? foundCircles : null;
+
+      // --- ОТРИСОВКА РЕЗУЛЬТАТОВ ---
+      
+      // 1. Рисуем контур Матрицы (Синий)
+      oCtx.beginPath();
+      oCtx.arc(matr.x, matr.y, matr.r, 0, Math.PI * 2);
+      oCtx.strokeStyle = '#2563eb'; // Синий
+      oCtx.lineWidth = 3;
+      oCtx.stroke();
+      
+      // Центр матрицы
+      oCtx.fillStyle = '#2563eb';
+      oCtx.fillRect(matr.x - 4, matr.y - 4, 8, 8);
+
+      // 2. Рисуем контур Дорна (Зеленый), если найден
+      if (dorn) {
+        oCtx.beginPath();
+        oCtx.arc(dorn.x, dorn.y, dorn.r, 0, Math.PI * 2);
+        oCtx.strokeStyle = '#16a34a'; // Зеленый
+        oCtx.lineWidth = 3;
+        oCtx.stroke();
+
+        // Центр дорна
+        oCtx.fillStyle = '#16a34a';
+        oCtx.fillRect(dorn.x - 4, dorn.y - 4, 8, 8);
+
+        // --- РАСЧЕТ МЕТРИК НА ОСНОВЕ НАЙДЕННЫХ КРУГОВ ---
+        
+        // 1. Зазор (Gap)
+        // В реальности нужно знать масштаб: сколько пикселей в 1 мм.
+        // Пока сделаем упрощенно: считаем, что пользователь ввел правильные диаметры,
+        // а мы проверяем только геометрию смещения.
+        // Но если нужно считать зазор по пикселям, нужна калибровочная мишень.
+        // Здесь мы просто берем значения из инпутов, но показываем их рядом с объектом.
+        
+        const dornVal = parseFloat(document.getElementById('dornDiam').value) || 6.7;
+        const matrVal = parseFloat(document.getElementById('matrDiam').value) || 10.4;
+        
+        // Реальный зазор в мкм
+        const gapMkm = ((matrVal - dornVal) * 10).toFixed(2);
+        
+        // Неравномерность (разница радиусов в мм, переведенная в условные единицы)
+        // Это примерная логика, так как без калибровки в мм нельзя.
+        const radiusDiffPx = matr.r - dorn.r; 
+        // Допустим, 10 пикселей = 1 мм (это нужно калибровать!)
+        const nonUniformMm = (radiusDiffPx / 10.0).toFixed(3); 
+
+        // Смещение центров (Shift)
+        const shiftX = (matr.x - dorn.x).toFixed(2);
+        const shiftY = (matr.y - dorn.y).toFixed(2);
+        const shiftTotal = Math.sqrt(shiftX*shiftX + shiftY*shiftY).toFixed(2);
+
+        // Выводим в интерфейс
+        document.getElementById('valGap').textContent = gapMkm + ' мкм';
+        document.getElementById('valNonUniform').textContent = nonUniformMm + ' мм';
+        document.getElementById('valShift').textContent = shiftTotal + ' мм';
+        document.getElementById('valX').textContent = shiftX + ' px'; // Или перевести в мм
+        document.getElementById('valY').textContent = shiftY + ' px';
+
+      } else {
+        // Если дорн не найден, пишем предупреждение
+        document.getElementById('valGap').textContent = '—';
+        document.getElementById('valNonUniform').textContent = 'Не найден дорн';
+        document.getElementById('valShift').textContent = '—';
+      }
+
+    } else {
+      // Круги не найдены
+      document.getElementById('valGap').textContent = '—';
+      document.getElementById('valNonUniform').textContent = 'Нет объектов';
+      document.getElementById('valShift').textContent = '—';
+    }
+
+  } catch (err) {
+    console.error('❌ Ошибка OpenCV:', err);
+  } finally {
+    // Освобождаем память (обязательно для OpenCV в браузере)
+    srcMat.delete();
+    grayMat.delete();
+    circles.delete();
+  }
+
+  // --- КОНЕЦ OPENCV ---
 
   frameCount++;
+  
+  // Автостоп через N кадров (чтобы не грузить CPU бесконечно)
   if (frameCount >= 15) {
     freezeUI(w, h);
-    calculateMetrics();
     stopProcessing();
     frameCount = 0;
     return;
@@ -164,6 +301,9 @@ function processFrame() {
 
   requestAnimationFrame(processFrame);
 }
+
+
+  
 
 function freezeUI(w, h) {
   const frozenImg = document.getElementById('frozenImg');
