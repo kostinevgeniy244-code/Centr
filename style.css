@@ -117,30 +117,42 @@ button#startBtn.processing { background-color: var(--warning); }
 }
 
 /* Контейнер для всех слоев видео-потока */
+/* Контейнер области видео: задаёт реальные размеры */
+.video-area {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 4/3; /* подстрой под свою камеру: 16/9, 4/3 и т.д. */
+  overflow: hidden;
+  background-color: #000;
+  border-radius: 10px;
+  box-shadow: inset 0 2px 8px rgba(0,0,0,0.2);
+  /* никаких height — aspect-ratio сам всё посчитает */
+}
+
+/* Убери .stream-layer-container из расчётов, или сделай его просто обёрткой */
 .stream-layer-container {
   position: relative;
   width: 100%;
-  /* высота либо фиксированная, либо через aspect-ratio, либо задаётся контейнеру явно */
-  overflow: hidden;
+  /* НЕ задавай здесь height / aspect-ratio, чтобы не было конфликта */
 }
 
 #video {
   position: absolute;
   top: 0; left: 0;
-  width: 100%; height: 100%;
-  object-fit: contain;
+  width: 100%;
+  height: 100%;
+  object-fit: contain; /* или cover — по желанию */
   z-index: 1;
   display: block;
   background: #000;
 }
 
-/* ВАЖНО: canvas всегда виден для JS, но рисуется поверх видео — пользователь не отличит */
 #canvas {
   position: absolute;
   top: 0; left: 0;
   z-index: 2;
-  display: block; /* ❌ было: none — это ломало всё */
-  /* никаких width/height в CSS — только в JS */
+  display: block; /* важно: не none */
+  /* width/height задаются только через JS (canvas.width/height) */
 }
 
 canvas#overlay {
@@ -152,10 +164,13 @@ canvas#overlay {
 }
 
 img.frozen-frame {
-  display: none; /* замороженный кадр скрыт по умолчанию */
+  display: none; /* скрыто по умолчанию */
+  position: absolute;
+  top: 0; left: 0;
   width: 100%;
-  height: auto;
+  height: 100%;
   object-fit: contain;
+  z-index: 4;
 }
 
 /* Область видео: задает размер и фон */
