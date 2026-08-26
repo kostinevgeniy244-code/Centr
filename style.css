@@ -127,31 +127,62 @@ button#startBtn.processing { background-color: var(--warning); }
   min-height: 320px;
 }
 
-.image-container {
+/* Контейнер для всех слоёв видео-потока */
+.stream-layer-container {
   position: relative;
   width: 100%;
-  border-radius: 10px;
+  height: 100%;
   overflow: hidden;
-  background: #000;
-  aspect-ratio: 4/3;
-  box-shadow: inset 0 2px 8px rgba(0,0,0,0.2);
 }
 
-img#frozenImg {
-  width: 100%;
-  height: 100%;
-  object-fit: contain;
-  display: none;
+#video {
+  position: absolute;
+  top: 0; left: 0;
+  width: 100%; height: 100%;
+  object-fit: cover;
+  z-index: 1;
+  display: block;
+}
+
+#canvas {
+  position: absolute;
+  top: 0; left: 0;
+  width: 100%; height: 100%;
+  z-index: 2;
+  display: none; /* Скрыт от пользователя, нужен только для OpenCV */
 }
 
 canvas#overlay {
   position: absolute;
   top: 0; left: 0;
   width: 100%; height: 100%;
-  pointer-events: none;       /* чтобы клики проходили сквозь оверлей */
+  pointer-events: none; /* Чтобы клики проходили сквозь оверлей */
   z-index: 3;
+  display: block;
 }
 
+/* Замороженный кадр */
+img#frozenImg {
+  position: absolute;
+  top: 0; left: 0;
+  width: 100%; height: 100%;
+  object-fit: contain;
+  z-index: 4;
+  display: none; /* Показываем только когда нужно */
+}
+
+/* Область видео: задаёт размер и фон */
+.video-area {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 4/3; /* Подбери под камеру: 4/3 или 16/9 */
+  overflow: hidden;
+  background-color: #000;
+  border-radius: 10px;
+  box-shadow: inset 0 2px 8px rgba(0,0,0,0.2);
+}
+
+/* Метрики */
 .metrics-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -182,54 +213,3 @@ canvas#overlay {
 .metric-gap .metric-value { color: var(--primary); }
 .metric-nonuniform .metric-value { color: var(--warning); }
 .metric-shift .metric-value { color: var(--danger); }
-
-/* Видео-область: задаёт размер и позицию для всех слоёв */
-.video-area {
-  position: relative;
-  width: 100%;
-  aspect-ratio: 4/3;          /* подбери под камеру: 4/3 или 16/9 */
-  overflow: hidden;
-  background-color: #000;
-  border-radius: 10px;
-  box-shadow: inset 0 2px 8px rgba(0,0,0,0.2);
-}
-
-#video {
-  position: absolute;
-  top: 0; left: 0;
-  width: 100%; height: 100%;
-  object-fit: cover;
-  z-index: 1;
-  display: block;
-}
-
-#canvas {
-  position: absolute;
-  top: 0; left: 0;
-  width: 100%; height: 100%;
-  z-index: 2;
-  display: none;             /* скрываем, если не нужно видеть буфер */
-}
-
-.image-container {
-  position: absolute;
-  top: 0; left: 0;
-  width: 100%; height: 100%;
-  overflow: hidden;
-  pointer-events: none;
-}
-
-img#frozenImg {
-  position: static;
-  width: 100%; height: 100%;
-  object-fit: contain;
-  display: none;
-}
-
-canvas#overlay {
-  position: absolute;
-  top: 0; left: 0;
-  width: 100%; height: 100%;
-  pointer-events: none;       /* чтобы клики проходили сквозь оверлей */
-  z-index: 3;
-}
