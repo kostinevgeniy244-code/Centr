@@ -3,18 +3,18 @@ console.log('core.js: загрузка');
 let isRunning = false;
 let frameCount = 0;
 
-document.addEventListener('DOMContentLoaded', () => {
+function initHandlers() {
   const btnStart = document.getElementById('startBtn');
   const btnReset = document.getElementById('resetBtn');
 
   if (!btnStart) {
-    console.error('Кнопка #startBtn не найдена!');
+    console.error('❌ Не найдена кнопка #startBtn');
     return;
   }
 
   // Обработчик СТАРТ
   btnStart.addEventListener('click', () => {
-    console.log('Клик по кнопке Старт');
+    console.log('🖱️ Клик по кнопке Старт');
     if (isRunning) {
       stopProcessing();
     } else {
@@ -22,10 +22,22 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   });
 
-  // Обработчик СБРОС
-  if (btnReset) {
-    btnReset.addEventListener('click', resetView);
+  if (!btnReset) {
+    console.error('❌ Не найдена кнопка #resetBtn');
+    return;
   }
+
+  // Обработчик СБРОС — самый важный кусок
+  btnReset.addEventListener('click', (e) => {
+    e.preventDefault(); // на всякий случай
+    console.log('🔄 Клик по кнопке Сброс — запускаем resetView()');
+    resetView();
+  });
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  console.log('DOM загружен, инициализируем обработчики...');
+  initHandlers();
 });
 
 function startProcessing() {
@@ -41,11 +53,10 @@ function startProcessing() {
 function stopProcessing() {
   isRunning = false;
   updateButtonState('stopped', 'Стоп (нажмите для старта)');
-  // Статус можно оставить как есть или вернуть в «Остановлено»
 }
 
 function resetView() {
-  console.log('Сброс: возврат к видеопотоку');
+  console.log('🚀 resetView(): сбрасываем состояние');
   isRunning = false;
   frameCount = 0;
 
@@ -55,22 +66,18 @@ function resetView() {
   const frozenImg = document.getElementById('frozenImg');
   const appWrapper = document.querySelector('.app-wrapper');
 
-  // Показываем видео и слои отрисовки
   if (video) video.style.display = 'block';
   if (canvas) canvas.style.display = 'block';
   if (overlay) overlay.style.display = 'block';
 
-  // Скрываем замороженный кадр
   if (frozenImg) frozenImg.style.display = 'none';
 
-  // Убираем класс frozen-mode, чтобы кнопка сброса могла исчезнуть (если используешь скрытие)
   if (appWrapper) appWrapper.classList.remove('frozen-mode');
 
-  // Возвращаем кнопку в исходное состояние
   updateButtonState('default', 'Старт (автозаморозка)');
-
-  // Обновляем статус
   updateStatus('ok', 'Камера готова');
+
+  console.log('✅ resetView(): состояние сброшено, видеопоток должен быть виден');
 }
 
 function updateButtonState(mode, text) {
@@ -85,7 +92,7 @@ function updateButtonState(mode, text) {
   } else if (mode === 'stopped') {
     btn.classList.add('stopped');
   }
-  // Для 'default' классы не добавляем — будет базовый синий цвет
+  // default — без классов
 
   btn.textContent = text;
 }
@@ -107,7 +114,7 @@ function processFrame() {
   const overlay = document.getElementById('overlay');
 
   if (!video || !canvas || !overlay) {
-    console.error('Не найдены video/canvas/overlay');
+    console.error('❌ Не найдены video/canvas/overlay');
     stopProcessing();
     return;
   }
@@ -118,7 +125,7 @@ function processFrame() {
   ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
   oCtx.clearRect(0, 0, overlay.width, overlay.height);
 
-  // Тестовая отрисовка (эллипсы)
+  // тестовая отрисовка
   oCtx.strokeStyle = '#16a34a';
   oCtx.lineWidth = 3;
   oCtx.beginPath();
@@ -131,7 +138,6 @@ function processFrame() {
   oCtx.ellipse(canvas.width / 2, canvas.height / 2, 120, 100, 0, 0, Math.PI * 2);
   oCtx.stroke();
 
-  // Автозаморозка через 15 кадров
   frameCount++;
   if (frameCount >= 15) {
     const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
@@ -167,13 +173,11 @@ function freezeUI(imageData) {
     frozenImg.onload = () => URL.revokeObjectURL(url);
   }, 'image/png');
 
-  // Переключаем видимость
   if (video) video.style.display = 'none';
   if (canvas) canvas.style.display = 'none';
   if (overlay) overlay.style.display = 'none';
   frozenImg.style.display = 'block';
 
-  // Добавляем класс, чтобы кнопка сброса была видна (если используешь скрытие по классу)
   if (appWrapper) appWrapper.classList.add('frozen-mode');
 }
 
