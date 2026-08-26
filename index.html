@@ -1,66 +1,91 @@
-<div class="app-wrapper">
-  <h1>📏 Замер зазора: дорн/матрица</h1>
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Замер зазора: дорн/матрица</title>
+  <!-- Подключаем стили -->
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
 
-  <!-- Панель управления -->
-  <div class="controls-panel">
-    <div class="input-row">
-      <label>Диаметр дорна (мм)</label>
-      <input type="number" id="dornDiam" value="40" step="0.1" />
-    </div>
-    <div class="input-row">
-      <label>Диаметр матрицы (мм)</label>
-      <input type="number" id="matrDiam" value="50" step="0.1" />
-    </div>
-    <button id="startBtn">Старт (автозаморозка)</button>
+  <div class="app-wrapper">
+    <h1>📏 Замер зазора: дорн/матрица</h1>
 
-    <div class="status-bar" id="statusBar">
-      <span class="dot" id="statusDot"></span>
-      <span id="statusText">Ожидание загрузки OpenCV</span>
+    <!-- Панель управления -->
+    <div class="controls-panel">
+      <div class="input-row">
+        <label>Диаметр дорна (мм)</label>
+        <input type="number" id="dornDiam" value="40" step="0.1" />
+      </div>
+      <div class="input-row">
+        <label>Диаметр матрицы (мм)</label>
+        <input type="number" id="matrDiam" value="50" step="0.1" />
+      </div>
+      <button id="startBtn">Старт (автозаморозка)</button>
+
+      <div class="status-bar" id="statusBar">
+        <span class="dot" id="statusDot"></span>
+        <span id="statusText">Ожидание загрузки OpenCV...</span>
+      </div>
+    </div>
+
+    <!-- Результат -->
+    <div class="result-panel">
+      <!-- Область видеопотока -->
+      <div class="video-area">
+        <!-- Контейнер для слоев -->
+        <div class="stream-layer-container">
+          <!-- Фон: видеопоток -->
+          <video id="video" autoplay muted playsinline></video>
+          
+          <!-- Буфер для OpenCV (не виден) -->
+          <canvas id="canvas"></canvas>
+          
+          <!-- Оверлей для отрисовки -->
+          <canvas id="overlay"></canvas>
+        </div>
+
+        <!-- Замороженный кадр -->
+        <img id="frozenImg" src="" alt="Результат" class="frozen-frame" />
+      </div>
+
+      <!-- Метрики -->
+      <div class="metrics-grid">
+        <div class="metric-item metric-gap">
+          <span class="metric-value" id="valGap">—</span>
+          <span class="metric-label">Зазор</span>
+        </div>
+        <div class="metric-item metric-nonuniform">
+          <span class="metric-value" id="valNonUniform">—</span>
+          <span class="metric-label">Неравномерность</span>
+        </div>
+        <div class="metric-item metric-shift">
+          <span class="metric-value" id="valShift">—</span>
+          <span class="metric-label">Макс. смещение</span>
+        </div>
+        <div class="metric-item" style="opacity:0.6">
+          <span class="metric-value" id="valX">—</span>
+          <span class="metric-label">Смещение X</span>
+        </div>
+        <div class="metric-item" style="opacity:0.6">
+          <span class="metric-value" id="valY">—</span>
+          <span class="metric-label">Смещение Y</span>
+        </div>
+      </div>
     </div>
   </div>
 
-  <!-- Результат -->
-  <div class="result-panel">
-    <!-- Область видеопотока: все слои внутри одного контейнера -->
-    <div class="video-area">
-      <!-- Контейнер, относительно которого позиционируются все слои -->
-      <div class="stream-layer-container">
-        <!-- Фон: видеопоток -->
-        <video id="video" autoplay muted playsinline></video>
-
-        <!-- Буфер для OpenCV (не виден пользователю) -->
-        <canvas id="canvas"></canvas>
-
-        <!-- Оверлей для отрисовки эллипсов и линий -->
-        <canvas id="overlay"></canvas>
-      </div>
-
-      <!-- Замороженный кадр (показываем только когда нужно) -->
-      <img id="frozenImg" src="" alt="Результат" class="frozen-frame" />
-    </div>
-
-    <!-- Метрики -->
-    <div class="metrics-grid">
-      <div class="metric-item metric-gap">
-        <span class="metric-value" id="valGap">—</span>
-        <span class="metric-label">Зазор</span>
-      </div>
-      <div class="metric-item metric-nonuniform">
-        <span class="metric-value" id="valNonUniform">—</span>
-        <span class="metric-label">Неравномерность</span>
-      </div>
-      <div class="metric-item metric-shift">
-        <span class="metric-value" id="valShift">—</span>
-        <span class="metric-label">Макс. смещение</span>
-      </div>
-      <div class="metric-item" style="opacity:0.6">
-        <span class="metric-value" id="valX">—</span>
-        <span class="metric-label">Смещение X</span>
-      </div>
-      <div class="metric-item" style="opacity:0.6">
-        <span class="metric-value" id="valY">—</span>
-        <span class="metric-label">Смещение Y</span>
-      </div>
-    </div>
-  </div>
-</div>
+  <!-- ВАЖНО: OpenCV должен быть первым! -->
+  <script src="https://docs.opencv.org/4.8.0/opencv.js"></script>
+  
+  <!-- Инициализация камеры и размеров -->
+  <script src="init.js"></script>
+  
+  <!-- Логика обработки (ядро) -->
+  <script src="core.js"></script>
+  
+  <!-- Расчет результатов -->
+  <script src="result.js"></script>
+</body>
+</html>
