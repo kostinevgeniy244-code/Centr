@@ -7,7 +7,6 @@ function initHandlers() {
   const btnStart = document.getElementById('startBtn');
   const btnReset = document.getElementById('resetBtn');
 
-  // Диагностика: что вообще есть в DOM?
   console.log('🔍 Проверка элементов:', {
     startBtn: btnStart,
     resetBtn: btnReset,
@@ -18,7 +17,7 @@ function initHandlers() {
   });
 
   if (!btnStart) {
-    console.error('❌ Не найдена кнопка #startBtn — обработка невозможна');
+    console.error('❌ Не найдена кнопка #startBtn');
     return;
   }
 
@@ -73,21 +72,13 @@ function resetView() {
   const frozenImg = document.getElementById('frozenImg');
   const appWrapper = document.querySelector('.app-wrapper');
 
-  // Проверка: если какого-то элемента нет — сразу в консоль
-  if (!video) console.error('❌ video не найден');
-  if (!canvas) console.error('❌ canvas не найден');
-  if (!overlay) console.error('❌ overlay не найден');
-  if (!frozenImg) console.error('❌ frozenImg не найден');
-
-  // Показываем видео и канвасы
-  if (video) video.style.display = 'block';
+  // Гарантированно делаем канвасы видимыми (на случай display:none в CSS)
   if (canvas) canvas.style.display = 'block';
   if (overlay) overlay.style.display = 'block';
 
-  // Скрываем замороженный кадр
+  if (video) video.style.display = 'block';
   if (frozenImg) frozenImg.style.display = 'none';
 
-  // Убираем класс режима заморозки
   if (appWrapper) appWrapper.classList.remove('frozen-mode');
 
   updateButtonState('default', 'Старт (автозаморозка)');
@@ -130,12 +121,19 @@ function processFrame() {
     return;
   }
 
-  // ВАЖНО: берём отображаемые размеры (то, что видит пользователь)
+  // ВАЖНО: принудительно делаем канвасы видимыми, чтобы clientWidth/Height были корректны
+  canvas.style.display = 'block';
+  overlay.style.display = 'block';
+
   const w = video.clientWidth;
   const h = video.clientHeight;
 
-  // Синхронизируем внутренние размеры канвасов с отображаемыми
-  // Это исправляет проблему «кадр в углу»
+  if (w === 0 || h === 0) {
+    console.warn('⚠️ video.clientWidth/Height = 0 — возможно, видео ещё не готово или контейнер имеет 0 высоту');
+    requestAnimationFrame(processFrame);
+    return;
+  }
+
   if (canvas.width !== w || canvas.height !== h) {
     canvas.width = w;
     canvas.height = h;
@@ -146,11 +144,10 @@ function processFrame() {
   const ctx = canvas.getContext('2d');
   const oCtx = overlay.getContext('2d');
 
-  // Рисуем видео ровно в отображаемый размер
   ctx.drawImage(video, 0, 0, w, h);
   oCtx.clearRect(0, 0, w, h);
 
-  // Отрисовка эллипсов (поверх видео)
+  // Отрисовка эллипсов
   oCtx.strokeStyle = '#16a34a';
   oCtx.lineWidth = 3;
   oCtx.beginPath();
@@ -183,19 +180,22 @@ function freezeUI(w, h) {
   const appWrapper = document.querySelector('.app-wrapper');
 
   if (!frozenImg) {
-    console.error('❌ frozenImg не найден, заморозка невозможна');
+    console.error('❌ frozenImg не найден');
     return;
   }
+
+  // Принудительно делаем канвасы видимыми для корректного drawImage
+  canvas.style.display = 'block';
+  overlay.style.display = 'block';
 
   const tempCanvas = document.createElement('canvas');
   tempCanvas.width = w;
   tempCanvas.height = h;
   const tempCtx = tempCanvas.getContext('2d');
 
-  // ГЛАВНОЕ: рисуем всё слоями на одном холсте
-  tempCtx.drawImage(video, 0, 0, w, h);      // видео
-  tempCtx.drawImage(canvas, 0, 0, w, h);     // фон
-  tempCtx.drawImage(overlay, 0, 0, w, h);    // линии
+  tempCtx.drawImage(video, 0, 0, w, h);
+  tempCtx.drawImage(canvas, 0, 0, w, h);
+  tempCtx.drawImage(overlay, 0, 0, w, h);
 
   tempCanvas.toBlob(blob => {
     if (!blob) {
@@ -207,7 +207,6 @@ function freezeUI(w, h) {
     frozenImg.onload = () => URL.revokeObjectURL(url);
   }, 'image/png');
 
-  // Скрываем видео и канвасы, показываем замороженный кадр
   if (video) video.style.display = 'none';
   if (canvas) canvas.style.display = 'none';
   if (overlay) overlay.style.display = 'none';
