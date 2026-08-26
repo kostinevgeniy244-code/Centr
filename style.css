@@ -120,7 +120,7 @@ button#startBtn.processing { background-color: var(--warning); }
 .stream-layer-container {
   position: relative;
   width: 100%;
-  height: 100%;
+  /* высота либо фиксированная, либо через aspect-ratio, либо задаётся контейнеру явно */
   overflow: hidden;
 }
 
@@ -128,19 +128,19 @@ button#startBtn.processing { background-color: var(--warning); }
   position: absolute;
   top: 0; left: 0;
   width: 100%; height: 100%;
-  /* ВАЖНО: object-fit: none, чтобы не искажать пропорции */
   object-fit: contain;
   z-index: 1;
   display: block;
   background: #000;
 }
 
+/* ВАЖНО: canvas всегда виден для JS, но рисуется поверх видео — пользователь не отличит */
 #canvas {
   position: absolute;
   top: 0; left: 0;
-  /* width/height будут задаваться через JS (реальные пиксели видео) */
   z-index: 2;
-  display: none; /* Скрыт от пользователя */
+  display: block; /* ❌ было: none — это ломало всё */
+  /* никаких width/height в CSS — только в JS */
 }
 
 canvas#overlay {
@@ -151,13 +151,11 @@ canvas#overlay {
   display: block;
 }
 
-img#frozenImg {
-  position: absolute;
-  top: 0; left: 0;
-  width: 100%; height: 100%;
+img.frozen-frame {
+  display: none; /* замороженный кадр скрыт по умолчанию */
+  width: 100%;
+  height: auto;
   object-fit: contain;
-  z-index: 4;
-  display: none;
 }
 
 /* Область видео: задает размер и фон */
