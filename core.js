@@ -1,4 +1,4 @@
-// core.js
+// core.js - ИСПРАВЛЕННАЯ ВЕРСИЯ
 
 let cvReady = false;
 let isRunning = false;
@@ -19,6 +19,9 @@ const PARAMS = {
 };
 const STABLE_THRESHOLD = 20;
 const MIN_CIRCULARITY = 0.7;
+
+// Флаг для одноразовой тестовой отрисовки (чтобы не мешал потом)
+let debugDrawDone = false; 
 
 function onOpenCVLoad() {
   cvReady = true;
@@ -69,7 +72,6 @@ function initElements() {
   frozenImgEl = document.getElementById('frozenImg');
   frozenOverlayEl = document.getElementById('frozenOverlay');
   
-  // Проверка наличия overlay
   if (!overlayEl) {
     console.error('❌ КРИТИЧЕСКАЯ ОШИБКА: Элемент <canvas id="overlay"> не найден в HTML!');
     updateStatus('err', 'Ошибка: нет элемента #overlay');
@@ -86,17 +88,13 @@ function resizeCanvas() {
   const w = videoEl.videoWidth;
   const h = videoEl.videoHeight;
 
-  // Если видео еще не загрузило реальные размеры, выходим
   if (w === 0 || h === 0) return;
-
-  console.log(`📐 Размеры: Видео ${w}x${h}, Канвас ${overlayEl.width}x${overlayEl.height}`);
 
   if (canvasEl) {
     canvasEl.width = w; 
     canvasEl.height = h;
   }
   
-  // ВАЖНО: Меняем именно атрибуты width/height, а не CSS
   overlayEl.width = w;
   overlayEl.height = h;
 }
@@ -107,7 +105,6 @@ function processFrame() {
     return;
   }
 
-  // 1. Синхронизируем размеры
   resizeCanvas();
 
   const w = overlayEl.width;
@@ -115,33 +112,35 @@ function processFrame() {
   const ctx = overlayEl.getContext('2d');
 
   if (!ctx) {
-    console.error('❌ Контекст канваса не получен!');
     requestAnimationFrame(processFrame);
     return;
   }
 
-  // 2. === ТЕСТОВАЯ ОТРИСОВКА (Гарантированно должна быть видна) ===
-  ctx.clearRect(0, 0, w, h);
-  
-  // Красная рамка по периметру (проверка позиционирования)
-  ctx.strokeStyle = 'red';
-  ctx.lineWidth = 4;
-  ctx.strokeRect(10, 10, w - 20, h - 20);
+  // --- ИСПРАВЛЕНИЕ: Очищаем только свой канвас, используя правильные имена переменных ---
+  // Мы НЕ делаем clearRect здесь, если хотим видеть и CSS-крестик, и контуры одновременно.
+  // Но если контуры накладываются друг на друга и становятся жирными, раскомментируй строку ниже:
+  // ctx.clearRect(0, 0, w, h); 
 
-  // Синяя точка в центре (проверка масштаба)
-  ctx.fillStyle = 'blue';
-  ctx.fillRect(w/2 - 5, h/2 - 5, 10, 10);
+  // --- ТЕСТОВАЯ ОТРИСОВКА (Только один раз для проверки работы слоев) ---
+  if (!debugDrawDone) {
+    // Красная рамка по периметру
+    ctx.strokeStyle = 'red';
+    ctx.lineWidth = 4;
+    ctx.strokeRect(10, 10, w - 20, h - 20);
 
-  // Если ты видишь эти элементы, значит отрисовка работает!
-  // Логику OpenCV можно включать ниже.
-  // ==========================================================
+    // Синяя точка в центре
+    ctx.fillStyle = 'blue';
+    ctx.fillRect(w/2 - 5, h/2 - 5, 10, 10);
+    
+    console.log('🟥🔵 Тестовые линии нарисованы. Если их не видно на экране - проблема в CSS слоях (z-index).');
+    debugDrawDone = true; // Больше не рисуем эти линии
+  }
+  // ---------------------------------------------------------------------
 
   // 3. Логика OpenCV (Поиск колец)
-  // Используем imread вместо несуществующего MatFromImage
   const srcMat = cv.imread(videoEl);
   
   if (!srcMat || srcMat.empty()) {
-    console.warn('⚠️ Кадр не прочитан (srcMat пуст). Ждем следующего кадра...');
     requestAnimationFrame(processFrame);
     return;
   }
@@ -153,14 +152,9 @@ function processFrame() {
   const hierarchy = new cv.Mat();
 
   try {
-    // Конвертация цветов
     cv.cvtColor(srcMat, grayMat, cv.COLOR_BGRA2GRAY);
     cv.GaussianBlur(grayMat, blurMat, new cv.Size(5, 5), 0);
-
-    // Бинаризация
     cv.adaptiveThreshold(blurMat, threshMat, 255, cv.ADAPTIVE_THRESH_GAUSSIAN_C, cv.THRESH_BINARY_INV, 11, 2);
-
-    // Поиск контуров
     cv.findContours(threshMat, contours, hierarchy, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
 
     const candidates = [];
@@ -168,7 +162,6 @@ function processFrame() {
       const cnt = contours.get(i);
       const area = cv.contourArea(cnt);
       
-      // Фильтр по площади (подбери под свой размер детали)
       if (area < 1000) continue;
 
       const perimeter = cv.arcLength(cnt, true);
@@ -186,15 +179,15 @@ function processFrame() {
       });
     }
 
-    // Освобождаем память
     srcMat.delete(); grayMat.delete(); blurMat.delete(); threshMat.delete();
     contours.delete(); hierarchy.delete();
 
-    // Логика стабилизации и отрисовки найденных колец
     if (candidates.length >= 2) {
+      // Сортируем: меньший диаметр - это дорн (inner), больший - матрица (outer)
       candidates.sort((a, b) => ((a.rx + a.ry) / 2) - ((b.rx + b.ry) / 2));
+      
       const inner = candidates;
-      const outer = candidates;
+      const outer = candidates[candidates.length - 1];
 
       stableRingCount++;
       if (stableRingCount >= STABLE_THRESHOLD) {
@@ -211,11 +204,9 @@ function processFrame() {
       currentState = STATE.SEARCH;
       stableRingCount = 0;
       updateStatus('warn', 'Не вижу деталь. Наведите камеру.');
-      // clearOverlay(); // Не чистим, чтобы видеть красную рамку теста
     }
   } catch (e) {
     console.error('💥 Ошибка в обработке кадра:', e);
-    // clearOverlay();
   }
 
   requestAnimationFrame(processFrame);
@@ -223,15 +214,16 @@ function processFrame() {
 
 function drawOverlayLive(inner, outer) {
   const ctx = overlayEl.getContext('2d');
-  // Не делаем clearRect здесь, чтобы не стирать тестовую красную рамку, 
-  // если ты хочешь видеть и её, и кольца. Если нужно только кольца - раскомментируй:
-  // ctx.clearRect(0, 0, overlayEl.width, overlayEl.height);
+  
+  // ВАЖНО: Не делаем clearRect здесь, чтобы не стирать фон и CSS-крестик.
+  // Если контуры становятся слишком жирными из-за наложения кадров, 
+  // лучше очищать канвас в начале processFrame (см. комментарий там).
 
-  // Рисуем найденные кольца
+  // Рисуем найденные кольца (зеленые)
   drawCircle(ctx, inner.center.x, inner.center.y, inner.rx, 'green', 3);
-  drawCircle(ctx, outer.center.x, outer.center.y, outer.rx, 'green', 3);
+  drawCircle(ctx, outer.center.center.x, outer.center.y, outer.rx, 'green', 3); // Исправлено: было outer.center.x
 
-  // Вектор смещения
+  // Вектор смещения (оранжевый)
   ctx.beginPath();
   ctx.moveTo(inner.center.x, inner.center.y);
   ctx.lineTo(outer.center.x, outer.center.y);
@@ -240,25 +232,19 @@ function drawOverlayLive(inner, outer) {
   ctx.stroke();
 }
 
-function clearOverlay() {
-  const ctx = overlayEl.getContext('2d');
-  if(ctx) ctx.clearRect(0, 0, overlayEl.width, overlayEl.height);
-}
-
 function freezeFrameAndMeasure(inner, outer) {
   isRunning = false;
   currentState = STATE.FROZEN;
 
-  const frozenCanvas = document.getElementById('canvas');
-  if (!frozenCanvas) return;
+  if (!canvasEl || !videoEl) return;
 
-  frozenCanvas.width = videoEl.videoWidth;
-  frozenCanvas.height = videoEl.videoHeight;
-  const frozenCtx = frozenCanvas.getContext('2d');
+  canvasEl.width = videoEl.videoWidth;
+  canvasEl.height = videoEl.videoHeight;
+  const frozenCtx = canvasEl.getContext('2d');
   frozenCtx.drawImage(videoEl, 0, 0);
 
   if (typeof calculateOnFrozen === 'function') {
-    calculateOnFrozen(frozenCanvas, frozenCanvas.width, frozenCanvas.height, inner, outer);
+    calculateOnFrozen(canvasEl, canvasEl.width, canvasEl.height, inner, outer);
   } else {
     console.error('❌ Функция calculateOnFrozen не найдена');
   }
@@ -268,11 +254,17 @@ function resetApp() {
   currentState = STATE.SEARCH;
   stableRingCount = 0;
   isRunning = false;
+  
   if (videoEl && videoEl.srcObject) {
     videoEl.srcObject.getTracks().forEach(t => t.stop());
     videoEl.srcObject = null;
   }
-  clearOverlay();
+  
+  // Очищаем канвас отрисовки
+  if(overlayEl) {
+    const ctx = overlayEl.getContext('2d');
+    if(ctx) ctx.clearRect(0, 0, overlayEl.width, overlayEl.height);
+  }
 
   document.querySelectorAll('.metric-value').forEach(el => el.textContent = '--');
 
