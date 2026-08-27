@@ -1,4 +1,4 @@
-// core.js - ИСПРАВЛЕННАЯ ВЕРСИЯ
+// core.js - ИСПРАВЛЕННАЯ И УЛУЧШЕННАЯ ВЕРСИЯ
 
 let cvReady = false;
 let isRunning = false;
@@ -13,14 +13,16 @@ let stableRingCount = 0;
 
 let videoEl, canvasEl, overlayEl, frozenImgEl, frozenOverlayEl;
 
+// Параметры по умолчанию (дорн и матрица)
 const PARAMS = {
   matrixDiam: 12.4,
   dornDiam: 9.3
 };
 const STABLE_THRESHOLD = 20;
 const MIN_CIRCULARITY = 0.7;
+const MIN_AREA = 1000; // можно подбирать под реальное разрешение
 
-// Флаг для одноразовой тестовой отрисовки (чтобы не мешал потом)
+// Флаг для одноразовой тестовой отрисовки
 let debugDrawDone = false; 
 
 function onOpenCVLoad() {
@@ -38,15 +40,12 @@ function updateStatus(type, text) {
 
   if (!overlay) return;
 
-  // 1. Обновляем текст
   if (txt) txt.textContent = text;
 
-  // 2. Обновляем точку (если есть)
   if (dot) {
     dot.className = 'dot status-' + type;
   }
 
-  // 3. Логика цветов и прогресса в зависимости от состояния
   if (currentState === STATE.SEARCH) {
     overlay.className = 'status-overlay state-search';
     if (progressFill) progressFill.style.width = '0%';
@@ -54,7 +53,6 @@ function updateStatus(type, text) {
   } 
   else if (currentState === STATE.LOCKED) {
     overlay.className = 'status-overlay state-locked';
-    // Показываем прогресс накопления стабильности
     const percent = Math.min((stableRingCount / STABLE_THRESHOLD) * 100, 100);
     if (progressFill) progressFill.style.width = percent + '%';
     if (progressCount) progressCount.textContent = stableRingCount;
@@ -66,14 +64,11 @@ function updateStatus(type, text) {
   }
 }
 
-
 async function startCamera() {
-  
-  // При старте сбрасываем статус в режим поиска
-if(document.getElementById('statusOverlay')) {
-  document.getElementById('statusOverlay').className = 'status-overlay state-search';
-}
-  
+  if(document.getElementById('statusOverlay')) {
+    document.getElementById('statusOverlay').className = 'status-overlay state-search';
+  }
+
   videoEl = document.getElementById('video');
   if (!videoEl) { console.error('❌ Элемент #video не найден'); return; }
 
@@ -106,7 +101,7 @@ function initElements() {
   overlayEl = document.getElementById('overlay');
   frozenImgEl = document.getElementById('frozenImg');
   frozenOverlayEl = document.getElementById('frozenOverlay');
-  
+
   if (!overlayEl) {
     console.error('❌ КРИТИЧЕСКАЯ ОШИБКА: Элемент <canvas id="overlay"> не найден в HTML!');
     updateStatus('err', 'Ошибка: нет элемента #overlay');
@@ -119,17 +114,14 @@ function initElements() {
 
 function resizeCanvas() {
   if (!videoEl || !overlayEl) return;
-  
   const w = videoEl.videoWidth;
   const h = videoEl.videoHeight;
-
   if (w === 0 || h === 0) return;
 
   if (canvasEl) {
     canvasEl.width = w; 
     canvasEl.height = h;
   }
-  
   overlayEl.width = w;
   overlayEl.height = h;
 }
@@ -140,41 +132,36 @@ function processFrame() {
     return;
   }
 
+  // Пересчитываем размеры только если они изменились (можно добавить проверку)
   resizeCanvas();
 
   const w = overlayEl.width;
   const h = overlayEl.height;
   const ctx = overlayEl.getContext('2d');
-
   if (!ctx) {
     requestAnimationFrame(processFrame);
     return;
   }
 
-  // --- ИСПРАВЛЕНИЕ: Очищаем только свой канвас, используя правильные имена переменных ---
-  // Мы НЕ делаем clearRect здесь, если хотим видеть и CSS-крестик, и контуры одновременно.
-  // Но если контуры накладываются друг на друга и становятся жирными, раскомментируй строку ниже:
-  // ctx.clearRect(0, 0, w, h); 
-
-  // --- ТЕСТОВАЯ ОТРИСОВКА (Только один раз для проверки работы слоев) ---
+  // --- ТЕСТОВАЯ ОТРИСОВКА (один раз) ---
   if (!debugDrawDone) {
-    // Красная рамка по периметру
     ctx.strokeStyle = 'red';
     ctx.lineWidth = 4;
     ctx.strokeRect(10, 10, w - 20, h - 20);
 
-    // Синяя точка в центре
     ctx.fillStyle = 'blue';
     ctx.fillRect(w/2 - 5, h/2 - 5, 10, 10);
-    
-    console.log('🟥🔵 Тестовые линии нарисованы. Если их не видно на экране - проблема в CSS слоях (z-index).');
-    debugDrawDone = true; // Больше не рисуем эти линии
-  }
-  // ---------------------------------------------------------------------
 
-  // 3. Логика OpenCV (Поиск колец)
+    console.log('🟥🔵 Тестовые линии нарисованы. Если их не видно — проверьте z-index в CSS.');
+    debugDrawDone = true;
+  }
+  // -------------------------------------
+
+  // Очищаем канвас для отрисовки новых контуров (CSS-крестик должен быть поверх)
+  ctx.clearRect(0, 0, w, h);
+
+  // OpenCV: поиск колец
   const srcMat = cv.imread(videoEl);
-  
   if (!srcMat || srcMat.empty()) {
     requestAnimationFrame(processFrame);
     return;
@@ -189,6 +176,7 @@ function processFrame() {
   try {
     cv.cvtColor(srcMat, grayMat, cv.COLOR_BGRA2GRAY);
     cv.GaussianBlur(grayMat, blurMat, new cv.Size(5, 5), 0);
+    // Можно подстроить параметры adaptiveThreshold под освещение
     cv.adaptiveThreshold(blurMat, threshMat, 255, cv.ADAPTIVE_THRESH_GAUSSIAN_C, cv.THRESH_BINARY_INV, 11, 2);
     cv.findContours(threshMat, contours, hierarchy, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
 
@@ -196,12 +184,13 @@ function processFrame() {
     for (let i = 0; i < contours.size(); i++) {
       const cnt = contours.get(i);
       const area = cv.contourArea(cnt);
-      
-      if (area < 1000) continue;
+      if (area < MIN_AREA) continue;
 
       const perimeter = cv.arcLength(cnt, true);
+      // Защита от деления на ноль
+      if (perimeter === 0) continue;
       const circularity = (4 * Math.PI * area) / (perimeter * perimeter);
-      
+
       if (circularity < MIN_CIRCULARITY) continue;
       if (cnt.total() < 5) continue;
 
@@ -210,18 +199,22 @@ function processFrame() {
         center: { x: ellipse.center.x, y: ellipse.center.y },
         rx: ellipse.size.width / 2,
         ry: ellipse.size.height / 2,
-        circularity
+        circularity,
+        avgRadius: (ellipse.size.width + ellipse.size.height) / 4
       });
     }
 
     srcMat.delete(); grayMat.delete(); blurMat.delete(); threshMat.delete();
     contours.delete(); hierarchy.delete();
 
+    // Ищем ровно два кольца: дорн (меньший) и матрицу (больший)
     if (candidates.length >= 2) {
-      // Сортируем: меньший диаметр - это дорн (inner), больший - матрица (outer)
-      candidates.sort((a, b) => ((a.rx + a.ry) / 2) - ((b.rx + b.ry) / 2));
-      
-      const inner = candidates;
+      // Сортируем по среднему радиусу
+      candidates.sort((a, b) => a.avgRadius - b.avgRadius);
+
+      // Предполагаем: первые N — это дорн, последние — матрица.
+      // Если у тебя всегда 2 основных кольца, можно взять candidates[0] и candidates[candidates.length-1]
+      const inner = candidates[0];
       const outer = candidates[candidates.length - 1];
 
       stableRingCount++;
@@ -232,8 +225,9 @@ function processFrame() {
           freezeFrameAndMeasure(inner, outer);
         }, 1000);
       } else {
+        currentState = STATE.LOCKED; // показываем прогресс накопления
         updateStatus('warn', `Стабильность: ${stableRingCount}/${STABLE_THRESHOLD}`);
-        drawOverlayLive(inner, outer);
+        drawOverlayLive(ctx, inner, outer);
       }
     } else {
       currentState = STATE.SEARCH;
@@ -247,16 +241,10 @@ function processFrame() {
   requestAnimationFrame(processFrame);
 }
 
-function drawOverlayLive(inner, outer) {
-  const ctx = overlayEl.getContext('2d');
-  
-  // ВАЖНО: Не делаем clearRect здесь, чтобы не стирать фон и CSS-крестик.
-  // Если контуры становятся слишком жирными из-за наложения кадров, 
-  // лучше очищать канвас в начале processFrame (см. комментарий там).
-
-  // Рисуем найденные кольца (зеленые)
+function drawOverlayLive(ctx, inner, outer) {
+  // Рисуем найденные кольца (зелёные)
   drawCircle(ctx, inner.center.x, inner.center.y, inner.rx, 'green', 3);
-  drawCircle(ctx, outer.center.center.x, outer.center.y, outer.rx, 'green', 3); // Исправлено: было outer.center.x
+  drawCircle(ctx, outer.center.x, outer.center.y, outer.rx, 'green', 3);
 
   // Вектор смещения (оранжевый)
   ctx.beginPath();
@@ -276,26 +264,56 @@ function freezeFrameAndMeasure(inner, outer) {
   canvasEl.width = videoEl.videoWidth;
   canvasEl.height = videoEl.videoHeight;
   const frozenCtx = canvasEl.getContext('2d');
+  if (!frozenCtx) return;
   frozenCtx.drawImage(videoEl, 0, 0);
 
-  if (typeof calculateOnFrozen === 'function') {
-    calculateOnFrozen(canvasEl, canvasEl.width, canvasEl.height, inner, outer);
-  } else {
-    console.error('❌ Функция calculateOnFrozen не найдена');
-  }
+  // Здесь можно сразу сделать расчёт, если нет отдельной функции
+  calculateOnFrozen(canvasEl, canvasEl.width, canvasEl.height, inner, outer);
+}
+
+function calculateOnFrozen(canvas, w, h, inner, outer) {
+  // Примерный расчёт: переводим пиксели в мм, используя известные диаметры
+  // Это упрощённо: в реальности нужна калибровка по эталону
+  const pxPerMm = PARAMS.matrixDiam / (outer.rx * 2); // масштаб по матрице
+
+  const dornPx = inner.rx * 2;
+  const matrixPx = outer.rx * 2;
+
+  const dornMm = dornPx * pxPerMm;
+  const matrixMm = matrixPx * pxPerMm;
+
+  const dx = outer.center.x - inner.center.x;
+  const dy = outer.center.y - inner.center.y;
+  const offsetMm = Math.sqrt(dx*dx + dy*dy) * pxPerMm;
+
+  // Неравномерность (разница радиусов по осям)
+  const innerUneven = Math.abs(inner.rx - inner.ry);
+  const outerUneven = Math.abs(outer.rx - outer.ry);
+
+  console.log({
+    dornMm,
+    matrixMm,
+    offsetMm,
+    innerUneven,
+    outerUneven,
+    pxPerMm
+  });
+
+  // Тут обновляй DOM-элементы с результатами (например .metric-value)
+  // document.querySelector('.metric-value.dorn').textContent = dornMm.toFixed(2);
+  // и т.д.
 }
 
 function resetApp() {
   currentState = STATE.SEARCH;
   stableRingCount = 0;
   isRunning = false;
-  
+
   if (videoEl && videoEl.srcObject) {
     videoEl.srcObject.getTracks().forEach(t => t.stop());
     videoEl.srcObject = null;
   }
-  
-  // Очищаем канвас отрисовки
+
   if(overlayEl) {
     const ctx = overlayEl.getContext('2d');
     if(ctx) ctx.clearRect(0, 0, overlayEl.width, overlayEl.height);
