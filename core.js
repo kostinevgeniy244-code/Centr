@@ -32,13 +32,48 @@ function onOpenCVLoad() {
 function updateStatus(type, text) {
   const dot = document.getElementById('statusDot');
   const txt = document.getElementById('statusText');
-  if (dot && txt) {
+  const progressFill = document.getElementById('statusProgress');
+  const progressCount = document.getElementById('statusCount');
+  const overlay = document.getElementById('statusOverlay');
+
+  if (!overlay) return;
+
+  // 1. Обновляем текст
+  if (txt) txt.textContent = text;
+
+  // 2. Обновляем точку (если есть)
+  if (dot) {
     dot.className = 'dot status-' + type;
-    txt.textContent = text;
+  }
+
+  // 3. Логика цветов и прогресса в зависимости от состояния
+  if (currentState === STATE.SEARCH) {
+    overlay.className = 'status-overlay state-search';
+    if (progressFill) progressFill.style.width = '0%';
+    if (progressCount) progressCount.textContent = '0';
+  } 
+  else if (currentState === STATE.LOCKED) {
+    overlay.className = 'status-overlay state-locked';
+    // Показываем прогресс накопления стабильности
+    const percent = Math.min((stableRingCount / STABLE_THRESHOLD) * 100, 100);
+    if (progressFill) progressFill.style.width = percent + '%';
+    if (progressCount) progressCount.textContent = stableRingCount;
+  } 
+  else if (currentState === STATE.FROZEN) {
+    overlay.className = 'status-overlay state-frozen';
+    if (progressFill) progressFill.style.width = '100%';
+    if (progressCount) progressCount.textContent = '20+';
   }
 }
 
+
 async function startCamera() {
+  
+  // При старте сбрасываем статус в режим поиска
+if(document.getElementById('statusOverlay')) {
+  document.getElementById('statusOverlay').className = 'status-overlay state-search';
+}
+  
   videoEl = document.getElementById('video');
   if (!videoEl) { console.error('❌ Элемент #video не найден'); return; }
 
