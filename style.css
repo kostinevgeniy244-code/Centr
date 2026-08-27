@@ -226,31 +226,43 @@ canvas#overlay {
 
 /* --- СТИЛИ ДЛЯ ПЕРЕКРЕСТИЯ (ВСТАВИТЬ В style.css) --- */
 
-.crosshair-wrapper {
+/* --- НАДЕЖНОЕ ПЕРЕКРЕСТИЕ (CSS) --- */
+.crosshair-fixed {
   position: absolute;
-  top: 0;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%); /* Гарантированный центр на всех экранах */
+  width: 60%;       /* Длина линий (60% от ширины экрана) */
+  height: 60%;      /* Длина линий (60% от высоты экрана) */
+  z-index: 4;        /* Поверх видео и канвасов */
+  pointer-events: none; /* Чтобы не мешал кликам */
+  display: block;
+}
+
+/* Горизонтальная линия (псевдоэлемент) */
+.crosshair-fixed::before {
+  content: '';
+  position: absolute;
+  top: 50%;
   left: 0;
   width: 100%;
+  height: 2px;
+  background-color: #ff0000; /* Красный */
+  box-shadow: 0 0 4px rgba(255, 0, 0, 0.8);
+  transform: translateY(-50%);
+}
+
+/* Вертикальная линия (псевдоэлемент) */
+.crosshair-fixed::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 50%;
+  width: 2px;
   height: 100%;
-  pointer-events: none; /* Чтобы клики проходили сквозь линии */
-  z-index: 4; /* Выше видео и канвасов */
-  display: flex;
-  justify-content: center;
-  align-items: center;
-}
-
-.crosshair-h {
-  width: 50%;       /* Длина горизонтальной линии */
-  height: 2px;      /* Толщина линии */
-  background-color: #ff0000; /* Ярко-красный */
-  box-shadow: 0 0 4px rgba(255, 0, 0, 0.8); /* Свечение для контраста */
-}
-
-.crosshair-v {
-  width: 2px;      /* Толщина вертикальной линии */
-  height: 50%;     /* Длина вертикальной линии */
   background-color: #ff0000;
   box-shadow: 0 0 4px rgba(255, 0, 0, 0.8);
+  transform: translateX(-50%);
 }
 
 /* Адаптив для очень маленьких экранов */
