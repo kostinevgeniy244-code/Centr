@@ -193,8 +193,8 @@ button#resetBtn:hover { background-color: #e5e7eb; }
   top: 0; left: 0;
   z-index: 0;
   display: none; /* только для OpenCV */
-  width: 100%;
-  height: 100%;
+/*  width: 100%;
+  height: 100%;*/
 }
 
 canvas#overlay {
@@ -203,8 +203,8 @@ canvas#overlay {
   pointer-events: none;
   z-index: 3;
   display: block;
-  width: 100%;
-  height: 100%;
+/*  width: 100%;
+  height: 100%; */
 }
 
 img.frozen-frame {
@@ -223,6 +223,6 @@ canvas#frozenOverlay {
   pointer-events: none;
   z-index: 5;
   display: none;
-  width: 100%;
-  height: 100%;
+/*  width: 100%;
+  height: 100%; */
 }
