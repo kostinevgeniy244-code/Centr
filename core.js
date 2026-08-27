@@ -14,8 +14,8 @@ let stableRingCount = 0;
 let videoEl, canvasEl, overlayEl, frozenImgEl, frozenOverlayEl;
 
 const PARAMS = {
-  matrixDiam: 50,
-  dornDiam: 30
+  matrixDiam: 12.4,
+  dornDiam: 9.3
 };
 const STABLE_THRESHOLD = 20;
 const MIN_CIRCULARITY = 0.7;
