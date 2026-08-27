@@ -224,6 +224,41 @@ canvas#overlay {
   /* width и height тоже управляются JS */
 }
 
+/* --- СТИЛИ ДЛЯ ПЕРЕКРЕСТИЯ (ВСТАВИТЬ В style.css) --- */
+
+.crosshair-wrapper {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none; /* Чтобы клики проходили сквозь линии */
+  z-index: 4; /* Выше видео (z-index: 1), выше canvas#overlay (z-index: 3) */
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+.crosshair-h {
+  width: 50%;       /* Длина горизонтальной линии (от центра в стороны) */
+  height: 2px;      /* Толщина линии */
+  background-color: #ff0000; /* Цвет: ярко-красный */
+  box-shadow: 0 0 4px rgba(255, 0, 0, 0.8); /* Легкое свечение */
+}
+
+.crosshair-v {
+  width: 2px;      /* Толщина вертикальной линии */
+  height: 50%;     /* Длина вертикальной линии */
+  background-color: #ff0000;
+  box-shadow: 0 0 4px rgba(255, 0, 0, 0.8);
+}
+
+/* Адаптив для очень маленьких экранов */
+@media (max-width: 480px) {
+  .crosshair-h { width: 30%; }
+  .crosshair-v { height: 30%; }
+}
+
 
 
 
