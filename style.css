@@ -166,47 +166,66 @@ button#resetBtn {
 button#resetBtn:hover { background-color: #e5e7eb; }
 
 /* Видео область */
+/* Видео область */
 .video-area {
   position: relative;
   width: 100%;
-/*  aspect-ratio: 4/3; */
+  /* Убрали aspect-ratio, чтобы не конфликтовало с object-fit */
   overflow: hidden;
   background-color: #000;
   border-radius: 10px;
   box-shadow: inset 0 2px 8px rgba(0,0,0,0.2);
   grid-column: 1 / -1;
-  min-height: 300px;
+  
+  /* ВАЖНО: min-height оставляем, но теперь мы будем принудительно 
+     растягивать канвас под видимый размер, если нужно */
+  min-height: 300px; 
+  display: block; /* Убираем возможные inline-отступы */
 }
 
 #video {
   position: absolute;
-  top: 0; left: 0;
+  top: 0;
+  left: 0;
   width: 100%;
   height: 100%;
-  object-fit: cover;
+  object-fit: cover; /* Заполняет весь блок без черных полос */
   z-index: 1;
   display: block;
   background: #000;
+  /* Добавляем это, чтобы видео не "прыгало" при старте */
+  transform: translate3d(0, 0, 0); 
+}
+
+/* ГЛАВНОЕ ИСПРАВЛЕНИЕ ДЛЯ ОТЛАДКИ */
+canvas#overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  pointer-events: none;
+  z-index: 3;
+  display: block;
+  
+  /* Оставляем эти строки ЗАКОММЕНТИРОВАННЫМИ в CSS.
+     Размеры будут задаваться ТОЛЬКО в JS (overlayEl.width = w).
+     Если раскомментировать width: 100%, канвас растянется и размажет пиксели. */
+  /* width: 100%; */
+  /* height: 100%; */
+  
+  image-rendering: pixelated; /* Чтобы при масштабировании браузера края были четкими */
 }
 
 #canvas {
   position: absolute;
-  top: 0; left: 0;
+  top: 0;
+  left: 0;
   z-index: 0;
-  display: none; /* только для OpenCV */
-/*  width: 100%;
-  height: 100%;*/
+  display: none;
+  /* width и height тоже управляются JS */
 }
 
-canvas#overlay {
-  position: absolute;
-  top: 0; left: 0;
-  pointer-events: none;
-  z-index: 3;
-  display: block;
-/*  width: 100%;
-  height: 100%; */
-}
+
+
 
 img.frozen-frame {
   position: absolute;
