@@ -169,7 +169,7 @@ button#resetBtn:hover { background-color: #e5e7eb; }
 .video-area {
   position: relative;
   width: 100%;
-  aspect-ratio: 4/3;
+/*  aspect-ratio: 4/3; */
   overflow: hidden;
   background-color: #000;
   border-radius: 10px;
