@@ -227,3 +227,18 @@ canvas#frozenOverlay {
   width: 100%;
   height: 100%;
 }
+button#btnFreeze {
+  margin-top: 4px;
+  padding: 14px;
+  background-color: var(--danger); /* Красный для кнопки "Стоп/Замер" */
+  color: white;
+  border: none;
+  border-radius: 10px;
+  font-size: 1rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color 0.2s;
+  width: 100%;
+}
+button#btnFreeze:hover { background-color: #b91c1c; }
+button#btnFreeze:disabled { background-color: #9ca3af; cursor: not-allowed; }
