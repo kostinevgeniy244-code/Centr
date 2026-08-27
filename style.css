@@ -48,7 +48,7 @@ h1 {
   color: var(--text);
 }
 
-/* Панель управления */
+/* --- Панель управления (слева) --- */
 .controls-panel {
   background: #f9fafb;
   border: 1px solid var(--border);
@@ -103,7 +103,7 @@ button#startBtn.processing { background-color: var(--warning); }
 .status-warn { color: var(--warning); }
 .status-err { color: var(--danger); }
 
-/* Результат */
+/* --- Результаты (справа) --- */
 .result-panel {
   background: #f9fafb;
   border: 1px solid var(--border);
@@ -116,88 +116,6 @@ button#startBtn.processing { background-color: var(--warning); }
   min-height: 320px;
 }
 
-/* Контейнер для всех слоев видео-потока */
-/* Контейнер области видео: задаёт реальные размеры */
-.video-area {
-  position: relative;
-  width: 100%;
-  aspect-ratio: 4/3; /* подстрой под свою камеру: 16/9, 4/3 и т.д. */
-  overflow: hidden;
-  background-color: #000;
-  border-radius: 10px;
-  box-shadow: inset 0 2px 8px rgba(0,0,0,0.2);
-  /* никаких height — aspect-ratio сам всё посчитает */
-}
-
-/* Убери .stream-layer-container из расчётов, или сделай его просто обёрткой */
-.stream-layer-container {
-.video-area {
-  position: relative;
-  width: 100%;
-  aspect-ratio: 4/3; /* подстрой под свою камеру: 16/9, 4/3 и т.д. */
-  overflow: hidden;
-  background-color: #000;
-  border-radius: 10px;
-  box-shadow: inset 0 2px 8px rgba(0,0,0,0.2);
-}
-
-/* .stream-layer-container здесь не нужен для размеров */
-.stream-layer-container {
-  position: relative;
-  width: 100%;
-  /* НЕ задавай height / aspect-ratio */
-}
-
-#video {
-  position: absolute;
-  top: 0; left: 0;
-  width: 100%;
-  height: 100%;
-  object-fit: contain; /* или cover — по желанию */
-  z-index: 1;
-  display: block;
-  background: #000;
-}
-
-#canvas {
-  position: absolute;
-  top: 0; left: 0;
-  z-index: 2;
-  display: block; /* не none */
-  /* width/height задаются только через JS */
-}
-
-canvas#overlay {
-  position: absolute;
-  top: 0; left: 0;
-  pointer-events: none;
-  z-index: 3;
-  display: block;
-}
-
-img.frozen-frame {
-  position: absolute;
-  top: 0; left: 0;
-  width: 100%;
-  height: 100%;
-  object-fit: contain;
-  z-index: 4;
-  display: none; /* скрыто по умолчанию */
-}
-
-
-/* Область видео: задает размер и фон */
-.video-area {
-  position: relative;
-  width: 100%;
-  aspect-ratio: 4/3; /* Подстраивай под свою камеру */
-  overflow: hidden;
-  background-color: #000;
-  border-radius: 10px;
-  box-shadow: inset 0 2px 8px rgba(0,0,0,0.2);
-}
-
-/* Метрики */
 .metrics-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -240,10 +158,72 @@ button#resetBtn {
   cursor: pointer;
   transition: all 0.2s;
   width: 100%;
-  display: block; /* <-- всегда видна */
+  display: block;
 }
-button#resetBtn:hover {
-  background-color: #e5e7eb;
-  border-color: var(--border);
+button#resetBtn:hover { background-color: #e5e7eb; }
+
+/* --- ВИДЕО ОБЛАСТЬ (ГЛАВНОЕ ИСПРАВЛЕНИЕ) --- */
+.video-area {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 4/3; /* Подстраивай под свою камеру: 16/9, 4/3 и т.д. */
+  overflow: hidden;
+  background-color: #000;
+  border-radius: 10px;
+  box-shadow: inset 0 2px 8px rgba(0,0,0,0.2);
 }
-/* Строку с .frozen-mode можно вообще удалить из CSS */
+
+/* 1. Живое видео */
+#video {
+  position: absolute;
+  top: 0; left: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain; /* или cover */
+  z-index: 1;
+  display: block;
+  background: #000;
+}
+
+/* 2. Буфер для OpenCV (СКРЫТ, только для расчетов) */
+#canvas {
+  position: absolute;
+  top: 0; left: 0;
+  z-index: 0;
+  display: none; /* КРИТИЧНО: не должно быть видно и не должно занимать место */
+  width: 100%;
+  height: 100%;
+}
+
+/* 3. Оверлей для живого видео (линии) */
+canvas#overlay {
+  position: absolute;
+  top: 0; left: 0;
+  pointer-events: none;
+  z-index: 3;
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+/* 4. Замороженный кадр (картинка) */
+img.frozen-frame {
+  position: absolute;
+  top: 0; left: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  z-index: 4;
+  display: none; /* скрыто по умолчанию */
+}
+
+/* 5. Оверлей для замороженного кадра (линии поверх картинки) */
+canvas#frozenOverlay {
+  position: absolute;
+  top: 0; left: 0;
+  pointer-events: none;
+  z-index: 5;
+  display: none; /* скрыто по умолчанию */
+  width: 100%;
+  height: 100%;
+}
