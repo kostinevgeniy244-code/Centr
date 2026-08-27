@@ -14,14 +14,26 @@
 
     <!-- Видео область -->
     <div class="video-area">
-      <video id="video" playsinline muted></video>
-      <!-- Скрытый canvas для OpenCV (не виден пользователю) -->
+      <!-- 1. Скрытый canvas для тяжелых вычислений OpenCV (не виден пользователю) -->
       <canvas id="canvas" style="display:none;"></canvas>
-      <!-- Оверлей для отрисовки в реальном времени -->
+      
+      <!-- 2. Само видео (фон) -->
+      <video id="video" playsinline muted></video>
+   
+      <!-- 3. Оверлей для отрисовки в реальном времени (контуры, векторы) -->
       <canvas id="overlay"></canvas>
-      <!-- Замороженный кадр (после замера) -->
+
+      <!-- 4. ПЕРЕКРЕСТИЕ (Добавлено сюда!) -->
+      <!-- Оно будет поверх видео и канвасов благодаря z-index в CSS -->
+      <div class="crosshair-wrapper">
+        <div class="crosshair-h"></div>
+        <div class="crosshair-v"></div>
+      </div>
+
+      <!-- 5. Замороженный кадр (после замера) -->
       <img id="frozenImg" class="frozen-frame" />
-      <!-- Оверлей поверх замороженного кадра -->
+      
+      <!-- 6. Оверлей поверх замороженного кадра (финальные цифры) -->
       <canvas id="frozenOverlay"></canvas>
     </div>
 
