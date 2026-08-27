@@ -17,7 +17,7 @@ const PARAMS = {
   matrixDiam: 50,
   dornDiam: 30
 };
-const STABLE_THRESHOLD = 20; // кадров стабильности для автозамера
+const STABLE_THRESHOLD = 20;
 const MIN_CIRCULARITY = 0.7;
 
 function onOpenCVLoad() {
@@ -68,27 +68,84 @@ function initElements() {
   overlayEl = document.getElementById('overlay');
   frozenImgEl = document.getElementById('frozenImg');
   frozenOverlayEl = document.getElementById('frozenOverlay');
+  
+  // Проверка наличия overlay
+  if (!overlayEl) {
+    console.error('❌ КРИТИЧЕСКАЯ ОШИБКА: Элемент <canvas id="overlay"> не найден в HTML!');
+    updateStatus('err', 'Ошибка: нет элемента #overlay');
+    return;
+  }
+
   resizeCanvas();
   window.addEventListener('resize', resizeCanvas);
 }
 
 function resizeCanvas() {
-  if (!videoEl || !canvasEl || !overlayEl) return;
-  const w = videoEl.videoWidth || 640;
-  const h = videoEl.videoHeight || 480;
-  canvasEl.width = w; canvasEl.height = h;
-  overlayEl.width = w; overlayEl.height = h;
+  if (!videoEl || !overlayEl) return;
+  
+  const w = videoEl.videoWidth;
+  const h = videoEl.videoHeight;
+
+  // Если видео еще не загрузило реальные размеры, выходим
+  if (w === 0 || h === 0) return;
+
+  console.log(`📐 Размеры: Видео ${w}x${h}, Канвас ${overlayEl.width}x${overlayEl.height}`);
+
+  if (canvasEl) {
+    canvasEl.width = w; 
+    canvasEl.height = h;
+  }
+  
+  // ВАЖНО: Меняем именно атрибуты width/height, а не CSS
+  overlayEl.width = w;
+  overlayEl.height = h;
 }
 
 function processFrame() {
-  if (!isRunning || !cvReady || !videoEl || videoEl.paused || videoEl.ended) {
+  if (!isRunning || !videoEl || videoEl.paused || videoEl.ended) {
     requestAnimationFrame(processFrame);
     return;
   }
 
+  // 1. Синхронизируем размеры
   resizeCanvas();
 
-  const srcMat = new cv.Mat(videoEl.height, videoEl.width, cv.CV_8UC4);
+  const w = overlayEl.width;
+  const h = overlayEl.height;
+  const ctx = overlayEl.getContext('2d');
+
+  if (!ctx) {
+    console.error('❌ Контекст канваса не получен!');
+    requestAnimationFrame(processFrame);
+    return;
+  }
+
+  // 2. === ТЕСТОВАЯ ОТРИСОВКА (Гарантированно должна быть видна) ===
+  ctx.clearRect(0, 0, w, h);
+  
+  // Красная рамка по периметру (проверка позиционирования)
+  ctx.strokeStyle = 'red';
+  ctx.lineWidth = 4;
+  ctx.strokeRect(10, 10, w - 20, h - 20);
+
+  // Синяя точка в центре (проверка масштаба)
+  ctx.fillStyle = 'blue';
+  ctx.fillRect(w/2 - 5, h/2 - 5, 10, 10);
+
+  // Если ты видишь эти элементы, значит отрисовка работает!
+  // Логику OpenCV можно включать ниже.
+  // ==========================================================
+
+  // 3. Логика OpenCV (Поиск колец)
+  // Используем imread вместо несуществующего MatFromImage
+  const srcMat = cv.imread(videoEl);
+  
+  if (!srcMat || srcMat.empty()) {
+    console.warn('⚠️ Кадр не прочитан (srcMat пуст). Ждем следующего кадра...');
+    requestAnimationFrame(processFrame);
+    return;
+  }
+
   const grayMat = new cv.Mat();
   const blurMat = new cv.Mat();
   const threshMat = new cv.Mat();
@@ -96,25 +153,27 @@ function processFrame() {
   const hierarchy = new cv.Mat();
 
   try {
-    // Читаем кадр
-    cv.cvtColor(new cv.MatFromImage(videoEl), srcMat, cv.COLOR_RGBA2BGRA);
+    // Конвертация цветов
     cv.cvtColor(srcMat, grayMat, cv.COLOR_BGRA2GRAY);
     cv.GaussianBlur(grayMat, blurMat, new cv.Size(5, 5), 0);
 
     // Бинаризация
     cv.adaptiveThreshold(blurMat, threshMat, 255, cv.ADAPTIVE_THRESH_GAUSSIAN_C, cv.THRESH_BINARY_INV, 11, 2);
 
-    // Контуры
+    // Поиск контуров
     cv.findContours(threshMat, contours, hierarchy, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
 
     const candidates = [];
     for (let i = 0; i < contours.size(); i++) {
       const cnt = contours.get(i);
       const area = cv.contourArea(cnt);
+      
+      // Фильтр по площади (подбери под свой размер детали)
       if (area < 1000) continue;
 
       const perimeter = cv.arcLength(cnt, true);
       const circularity = (4 * Math.PI * area) / (perimeter * perimeter);
+      
       if (circularity < MIN_CIRCULARITY) continue;
       if (cnt.total() < 5) continue;
 
@@ -127,18 +186,16 @@ function processFrame() {
       });
     }
 
+    // Освобождаем память
     srcMat.delete(); grayMat.delete(); blurMat.delete(); threshMat.delete();
     contours.delete(); hierarchy.delete();
 
-    // Логика стабилизации
+    // Логика стабилизации и отрисовки найденных колец
     if (candidates.length >= 2) {
-      // Сортируем: меньший — дорн, больший — матрица
       candidates.sort((a, b) => ((a.rx + a.ry) / 2) - ((b.rx + b.ry) / 2));
-      const inner = candidates[0];
-      const outer = candidates[1];
+      const inner = candidates;
+      const outer = candidates;
 
-      // Проверка стабильности (простая: если центры не сильно прыгают)
-      // В реальном проекте можно хранить историю и считать дисперсию
       stableRingCount++;
       if (stableRingCount >= STABLE_THRESHOLD) {
         currentState = STATE.LOCKED;
@@ -154,11 +211,11 @@ function processFrame() {
       currentState = STATE.SEARCH;
       stableRingCount = 0;
       updateStatus('warn', 'Не вижу деталь. Наведите камеру.');
-      clearOverlay();
+      // clearOverlay(); // Не чистим, чтобы видеть красную рамку теста
     }
   } catch (e) {
-    console.error(e);
-    clearOverlay();
+    console.error('💥 Ошибка в обработке кадра:', e);
+    // clearOverlay();
   }
 
   requestAnimationFrame(processFrame);
@@ -166,18 +223,13 @@ function processFrame() {
 
 function drawOverlayLive(inner, outer) {
   const ctx = overlayEl.getContext('2d');
-  ctx.clearRect(0, 0, overlayEl.width, overlayEl.height);
+  // Не делаем clearRect здесь, чтобы не стирать тестовую красную рамку, 
+  // если ты хочешь видеть и её, и кольца. Если нужно только кольца - раскомментируй:
+  // ctx.clearRect(0, 0, overlayEl.width, overlayEl.height);
 
-  // Рисуем пунктирную рамку ROI (опционально)
-  ctx.strokeStyle = 'rgba(255,255,255,0.4)';
-  ctx.lineWidth = 2;
-  ctx.setLineDash([10, 10]);
-  ctx.strokeRect(0, 0, overlayEl.width, overlayEl.height);
-  ctx.setLineDash([]);
-
-  // Синий круг — как система «видит» кольцо (для отладки)
-  drawCircle(ctx, inner.center.x, inner.center.y, inner.rx);
-  drawCircle(ctx, outer.center.x, outer.center.y, outer.rx);
+  // Рисуем найденные кольца
+  drawCircle(ctx, inner.center.x, inner.center.y, inner.rx, 'green', 3);
+  drawCircle(ctx, outer.center.x, outer.center.y, outer.rx, 'green', 3);
 
   // Вектор смещения
   ctx.beginPath();
@@ -190,21 +242,21 @@ function drawOverlayLive(inner, outer) {
 
 function clearOverlay() {
   const ctx = overlayEl.getContext('2d');
-  ctx.clearRect(0, 0, overlayEl.width, overlayEl.height);
+  if(ctx) ctx.clearRect(0, 0, overlayEl.width, overlayEl.height);
 }
 
 function freezeFrameAndMeasure(inner, outer) {
   isRunning = false;
   currentState = STATE.FROZEN;
 
-  // Сохраняем кадр в canvas для OpenCV
   const frozenCanvas = document.getElementById('canvas');
+  if (!frozenCanvas) return;
+
   frozenCanvas.width = videoEl.videoWidth;
   frozenCanvas.height = videoEl.videoHeight;
   const frozenCtx = frozenCanvas.getContext('2d');
   frozenCtx.drawImage(videoEl, 0, 0);
 
-  // Передаем в result.js для финального замера
   if (typeof calculateOnFrozen === 'function') {
     calculateOnFrozen(frozenCanvas, frozenCanvas.width, frozenCanvas.height, inner, outer);
   } else {
@@ -222,25 +274,22 @@ function resetApp() {
   }
   clearOverlay();
 
-  // Сброс UI
   document.querySelectorAll('.metric-value').forEach(el => el.textContent = '--');
 
-  // Скрываем замороженный кадр
   if (frozenImgEl) frozenImgEl.style.display = 'none';
   if (frozenOverlayEl) frozenOverlayEl.style.display = 'none';
 
   updateStatus('ok', 'Сброшено. Нажмите "ЗАПУСТИТЬ КАМЕРУ" для нового замера.');
 }
 
-function drawCircle(ctx, x, y, r) {
+function drawCircle(ctx, x, y, r, color = 'blue', width = 2) {
   ctx.beginPath();
   ctx.arc(x, y, r, 0, Math.PI * 2);
-  ctx.strokeStyle = 'blue';
-  ctx.lineWidth = 2;
+  ctx.strokeStyle = color;
+  ctx.lineWidth = width;
   ctx.stroke();
 }
 
-// Инициализация кнопки сброса
 document.addEventListener('DOMContentLoaded', () => {
   const resetBtn = document.getElementById('resetBtn');
   if (resetBtn) {
