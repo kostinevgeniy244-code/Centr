@@ -1,7 +1,12 @@
 // result.js
+
+const MIN_CIRCULARITY = 0.7; // порог «округлости» контура
+
 function calculateOnFrozen(imageData, w, h) {
+  // Синхронизируем размеры canvas под реальные пиксели кадра
   canvas.width = w;
   canvas.height = h;
+  const ctx = canvas.getContext('2d');
   ctx.putImageData(imageData, 0, 0);
 
   try {
@@ -42,9 +47,10 @@ function calculateOnFrozen(imageData, w, h) {
       return;
     }
 
+    // Сортируем по среднему радиусу: меньший — дорн, больший — матрица
     candidates.sort((a, b) => ((a.rx + a.ry) / 2) - ((b.rx + b.ry) / 2));
-    const inner = candidates[0];
-    const outer = candidates[candidates.length - 1];
+    const inner = candidates[0];   // дорн (условно неподвижный)
+    const outer = candidates[1];   // матрица (её смещение считаем)
 
     const dornDiamVal = parseFloat(document.getElementById('dornDiam').value);
     const matrDiamVal = parseFloat(document.getElementById('matrDiam').value);
@@ -53,9 +59,31 @@ function calculateOnFrozen(imageData, w, h) {
     const rDornPx = (inner.rx + inner.ry) / 2;
     const rMatrPx = (outer.rx + outer.ry) / 2;
 
-    const pxPerMm = (2 * rDornPx) / dornDiamVal;
+    const pxPerMm = (2 * rDornPx) / dornDiamVal; // масштаб по дорну
+
+    // Смещение матрицы относительно дорна (в пикселях и мм)
+    const dxPx = outer.center.x - inner.center.x;
+    const dyPx = outer.center.y - inner.center.y;
+    const dxMm = dxPx / pxPerMm;
+    const dyMm = dyPx / pxPerMm;
+
+    // Средний зазор (по радиусам)
     const gapPx = rMatrPx - rDornPx;
     const gapMm = gapPx / pxPerMm;
+
+    // Зазоры по осям (слева/справа, сверху/снизу)
+    // Логика: если матрица смещена вправо (dx>0), то слева зазор уменьшается, справа — увеличивается
+    const deltaR = rMatrPx - rDornPx; // разница радиусов (средний зазор)
+
+    const gapLeftPx = dxPx - deltaR;
+    const gapRightPx = dxPx + deltaR;
+    const gapTopPx = dyPx - deltaR;
+    const gapBottomPx = dyPx + deltaR;
+
+    const gapLeftMm = gapLeftPx / pxPerMm;
+    const gapRightMm = gapRightPx / pxPerMm;
+    const gapTopMm = gapTopPx / pxPerMm;
+    const gapBottomMm = gapBottomPx / pxPerMm;
 
     // Неравномерность зазора (по 24 точкам)
     const steps = 24;
@@ -71,26 +99,33 @@ function calculateOnFrozen(imageData, w, h) {
     const stdDev = Math.sqrt(distances.reduce((sum,d)=>sum+(d-mean)**2,0)/distances.length);
     const nonUniformity = stdDev / mean;
 
-    // Смещение
-    const dxPx = outer.center.x - inner.center.x;
-    const dyPx = outer.center.y - inner.center.y;
-    const dxMm = dxPx / pxPerMm;
-    const dyMm = dyPx / pxPerMm;
-    const shiftMm = Math.hypot(dxMm, dyMm);
+    // Обновляем UI
+    const valGapEl = document.getElementById('valGap');
+    const valNonUniformEl = document.getElementById('valNonUniform');
+    const valShiftEl = document.getElementById('valShift');
+    const valXEl = document.getElementById('valShiftX');
+    const valYEl = document.getElementById('valShiftY');
 
-    // Вывод метрик
-    valGapEl.textContent = gapMm.toFixed(3) + ' мм';
-    valNonUniformEl.textContent = (nonUniformity * 100).toFixed(2) + '%';
-    valShiftEl.textContent = shiftMm.toFixed(3) + ' мм';
-    valXEl.textContent = dxMm.toFixed(3) + ' мм';
-    valYEl.textContent = dyMm.toFixed(3) + ' мм';
+    const valLeftEl = document.getElementById('valGapLeft');
+    const valRightEl = document.getElementById('valGapRight');
+    const valTopEl = document.getElementById('valGapTop');
+    const valBottomEl = document.getElementById('valGapBottom');
+
+    if (valGapEl) valGapEl.textContent = gapMm.toFixed(3) + ' мм';
+    if (valNonUniformEl) valNonUniformEl.textContent = (nonUniformity * 100).toFixed(2) + '%';
+    if (valShiftEl) valShiftEl.textContent = Math.hypot(dxMm, dyMm).toFixed(3) + ' мм';
+    if (valXEl) valXEl.textContent = dxMm.toFixed(3) + ' мм';
+    if (valYEl) valYEl.textContent = dyMm.toFixed(3) + ' мм';
+
+    if (valLeftEl) valLeftEl.textContent = gapLeftMm.toFixed(3) + ' мм';
+    if (valRightEl) valRightEl.textContent = gapRightMm.toFixed(3) + ' мм';
+    if (valTopEl) valTopEl.textContent = gapTopMm.toFixed(3) + ' мм';
+    if (valBottomEl) valBottomEl.textContent = gapBottomMm.toFixed(3) + ' мм';
 
     setStatus('ok', `Готово: зазор ${gapMm.toFixed(3)} мм`);
 
-    // Отрисовка поверх изображения
     drawOverlay(inner, outer, dxPx, dyPx);
 
-    // Показываем замороженный кадр
     frozenImg.src = canvas.toDataURL();
     frozenImg.style.display = 'block';
   } catch (err) {
@@ -100,6 +135,7 @@ function calculateOnFrozen(imageData, w, h) {
 }
 
 function drawOverlay(inner, outer, dx, dy) {
+  const oCtx = overlay.getContext('2d');
   oCtx.clearRect(0, 0, overlay.width, overlay.height);
   overlay.width = canvas.width;
   overlay.height = canvas.height;
@@ -115,7 +151,7 @@ function drawOverlay(inner, outer, dx, dy) {
   drawEllipse(oCtx, outer.center.x, outer.center.y, outer.rx, outer.ry);
   oCtx.stroke();
 
-  // Вектор смещения
+  // Вектор смещения матрицы относительно дорна
   oCtx.beginPath();
   oCtx.moveTo(inner.center.x, inner.center.y);
   oCtx.lineTo(outer.center.x, outer.center.y);
@@ -131,7 +167,6 @@ function drawOverlay(inner, outer, dx, dy) {
   oCtx.lineWidth = 2;
   drawCircle(oCtx, inner.center.x, inner.center.y, 6);
   oCtx.fill(); oCtx.stroke();
-
   drawCircle(oCtx, outer.center.x, outer.center.y, 6);
   oCtx.fill(); oCtx.stroke();
 }
