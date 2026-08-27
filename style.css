@@ -70,7 +70,6 @@ input[type="number"] {
 }
 input:focus { border-color: var(--primary); outline: none; }
 
-/* Кнопка СТАРТА */
 button#startBtn {
   margin-top: 4px;
   padding: 14px;
@@ -162,37 +161,16 @@ button#resetBtn {
 }
 button#resetBtn:hover { background-color: #e5e7eb; }
 
-/* КНОПКА ЗАМЕРА - СТИЛИ */
-button#btnFreeze {
-  margin-top: 20px;
-  padding: 14px;
-  background-color: var(--danger);
-  color: white;
-  border: none;
-  border-radius: 10px;
-  font-size: 1rem;
-  font-weight: 600;
-  cursor: pointer;
-  transition: background-color 0.2s, transform 0.1s;
-  width: 100%;
-}
-button#btnFreeze:hover:not(:disabled) { background-color: #b91c1c; transform: scale(1.02); }
-button#btnFreeze:disabled {
-  background-color: #9ca3af;
-  cursor: not-allowed;
-  opacity: 0.7;
-}
-
 /* --- ВИДЕО ОБЛАСТЬ --- */
 .video-area {
   position: relative;
   width: 100%;
-  aspect-ratio: 4/3; /* Подстраивай под свою камеру: 16/9, 4/3 и т.д. */
+  aspect-ratio: 4/3;
   overflow: hidden;
   background-color: #000;
   border-radius: 10px;
   box-shadow: inset 0 2px 8px rgba(0,0,0,0.2);
-  grid-column: 1 / -1; /* Растянуть на всю ширину */
+  grid-column: 1 / -1;
 }
 
 #video {
@@ -210,7 +188,7 @@ button#btnFreeze:disabled {
   position: absolute;
   top: 0; left: 0;
   z-index: 0;
-  display: none; /* СКРЫТ! Не должен быть виден */
+  display: none;
   width: 100%;
   height: 100%;
 }
@@ -232,7 +210,7 @@ img.frozen-frame {
   height: 100%;
   object-fit: contain;
   z-index: 4;
-  display: none; /* Скрыто по умолчанию */
+  display: none;
 }
 
 canvas#frozenOverlay {
@@ -240,7 +218,7 @@ canvas#frozenOverlay {
   top: 0; left: 0;
   pointer-events: none;
   z-index: 5;
-  display: none; /* Скрыто по умолчанию */
+  display: none;
   width: 100%;
   height: 100%;
 }
