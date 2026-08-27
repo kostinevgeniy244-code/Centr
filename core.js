@@ -1,11 +1,17 @@
 let cvReady = false;
-let frameCount = 0;
+let isRunning = true;
 
-// Инициализация флага готовности OpenCV (вызывается после загрузки opencv.js)
-function onOpenCVLoad() {
-    cvReady = true;
-    console.log('✅ OpenCV загружен и готов к работе');
-}
+// СОСТОЯНИЯ
+const STATE = {
+    SEARCH: 'search',
+    LOCKED: 'locked',
+    FROZEN: 'frozen'
+};
+let currentState = STATE.SEARCH;
+let stableRingCount = 0;
+let frozenData = null;
+
+function onOpenCVLoad() { cvReady = true; }
 
 function processFrame() {
     if (!isRunning || !cvReady) return;
@@ -13,13 +19,14 @@ function processFrame() {
     const video = document.getElementById('video');
     const canvas = document.getElementById('canvas');
     const overlay = document.getElementById('overlay');
+    const statusEl = document.getElementById('valStatus');
     
-    if (!video || !canvas || !overlay) {
+    if (!video || !canvas || !overlay || !statusEl) {
         stopProcessing();
         return;
     }
 
-    // 1. Получаем реальные размеры области видео
+    // 1. Размеры и синхронизация
     const container = video.closest('.video-area');
     const w = container ? container.clientWidth : video.clientWidth;
     const h = container ? container.clientHeight : video.clientHeight;
@@ -29,219 +36,276 @@ function processFrame() {
         return;
     }
 
-    // Синхронизируем размеры канвасов
     if (canvas.width !== w || canvas.height !== h) {
-        canvas.width = w;
-        canvas.height = h;
-        overlay.width = w;
-        overlay.height = h;
+        canvas.width = w; canvas.height = h;
+        overlay.width = w; overlay.height = h;
     }
 
     const ctx = canvas.getContext('2d');
     const oCtx = overlay.getContext('2d');
-
-    // Рисуем кадр из видео на canvas
     ctx.drawImage(video, 0, 0, w, h);
 
-    // --- НАЧАЛО OPENCV ОБРАБОТКИ ---
-    
+    // --- OPENCV ---
     let srcMat = new cv.Mat(h, w, cv.CV_8UC4);
     let grayMat = new cv.Mat();
     let blurMat = new cv.Mat();
+    let threshMat = new cv.Mat();
     let edgesMat = new cv.Mat();
     let contours = new cv.MatVector();
     
+    // МАСКА ДЛЯ ЗОНЫ ПОИСКА (ROI)
+    let maskMat = new cv.Mat(h, w, cv.CV_8UC1, new cv.Scalar(0)); // Черный фон
+    
     try {
-        // Копируем данные из canvas в матрицу OpenCV
         const imageData = ctx.getImageData(0, 0, w, h);
         srcMat.data.set(imageData.data);
 
-        // Предобработка: Серый -> Размытие (убираем шум) -> Канни (края)
         cv.cvtColor(srcMat, grayMat, cv.COLOR_RGBA2GRAY);
         cv.GaussianBlur(grayMat, blurMat, new cv.Size(5, 5), 0);
+
+        // ==========================================
+        // ЭТАП 1: СОЗДАНИЕ МАСКИ (ЦЕНТР КАДРА)
+        // ==========================================
+        const centerX = w / 2;
+        const centerY = h / 2;
+        // Радиус зоны поиска: 30% от ширины кадра. 
+        // Можно менять: 0.25 (уже), 0.35 (шире)
+        const searchRadius = Math.min(w, h) * 0.3; 
+
+        // Рисуем белый круг на маске (разрешаем поиск только здесь)
+        const roiCanvas = document.createElement('canvas');
+        roiCanvas.width = w; roiCanvas.height = h;
+        const roiCtx = roiCanvas.getContext('2d');
         
-        // Пороги Canny: подстрой под освещение. 
-        // 50/150 - стандарт для металла с умеренными бликами.
-        cv.Canny(blurMat, edgesMat, 50, 150); 
+        roiCtx.fillStyle = 'white';
+        roiCtx.beginPath();
+        roiCtx.arc(centerX, centerY, searchRadius, 0, Math.PI * 2);
+        roiCtx.fill();
+        
+        // Конвертируем канвас маски в Mat
+        const maskData = roiCtx.getImageData(0, 0, w, h);
+        maskMat.data.set(maskData.data);
 
-        // Ищем контуры
-        cv.findContours(edgesMat, contours, new cv.Mat(), cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
+        // Применяем маску к изображению для поиска кольца
+        // Теперь мы ищем кольцо ТОЛЬКО внутри белого круга
+        let maskedBlur = new cv.Mat();
+        cv.bitwise_and(blurMat, blurMat, maskedBlur, maskMat);
 
-        oCtx.clearRect(0, 0, w, h);
+        // Поиск тёмного кольца на замаскированном изображении
+        cv.threshold(maskedBlur, threshMat, 80, 255, cv.THRESH_BINARY_INV);
+        cv.findContours(threshMat, contours, new cv.Mat(), cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
 
-        let bestMatrix = null;
-        let bestDorn = null;
+        let detectedRing = null;
+        let minDistFromCenter = Infinity;
 
-        // 2. Перебираем контуры и ищем эллипсы
         for (let i = 0; i < contours.size(); i++) {
             let cnt = contours.get(i);
-            
-            // Отсекаем мелкий шум
-            if (cnt.total() < 40) continue;
+            if (cnt.total() < 30) continue;
 
-            try {
+            let area = cv.contourArea(cnt);
+            // Фильтр площади: кольцо должно быть заметным, но не гигантским
+            if (area < 200 || area > 5000) continue; 
+
+            let perimeter = cv.arcLength(cnt, true);
+            if (perimeter === 0) continue;
+            
+            // Проверка на округлость
+            let circularity = (4 * Math.PI * area) / (perimeter * perimeter);
+            if (circularity > 0.7 && circularity < 0.95) {
                 let ellipse = cv.fitEllipse(cnt);
-                // ellipse.size.width - это диаметр эллипса в пикселях
-                let diameterPx = ellipse.size.width; 
                 
-                // Логика выбора:
-                // Матрица - самая крупная деталь (или в центре)
-                // Дорн - поменьше, внутри матрицы
+                // ГЛАВНОЕ ИЗМЕНЕНИЕ: выбираем кольцо, ближайшее к центру кадра
+                let dist = Math.hypot(ellipse.center.x - centerX, ellipse.center.y - centerY);
                 
-                if (!bestMatrix || diameterPx > bestMatrix.diameterPx) {
-                    bestMatrix = { ...ellipse, diameterPx: diameterPx };
+                if (dist < minDistFromCenter) {
+                    minDistFromCenter = dist;
+                    detectedRing = ellipse;
                 }
-            } catch (e) {
-                continue;
             }
         }
 
-        // Если матрицу нашли, ищем дорн ВНУТРИ неё
-        if (bestMatrix) {
-            // Рисуем Матрицу (Синий)
-            drawEllipse(oCtx, bestMatrix, '#2563eb', 3);
+        // ==========================================
+        // ЛОГИКА СОСТОЯНИЙ
+        // ==========================================
+        
+        // Отрисовка зоны поиска (для отладки - пунктирный круг)
+        oCtx.strokeStyle = 'rgba(255, 255, 255, 0.3)';
+        oCtx.lineWidth = 2;
+        oCtx.setLineDash([10, 10]);
+        oCtx.beginPath();
+        oCtx.arc(centerX, centerY, searchRadius, 0, Math.PI * 2);
+        oCtx.stroke();
+        oCtx.setLineDash([]); // Сброс пунктира
 
+        if (currentState === STATE.FROZEN && frozenData) {
+            drawResult(oCtx, frozenData);
+            statusEl.textContent = "ЗАМЕР ВЫПОЛНЕН (FROZEN)";
+            statusEl.style.color = "green";
+            requestAnimationFrame(processFrame);
+            return;
+        }
+
+        if (detectedRing) {
+            // Рисуем кольцо
+            let color = (currentState === STATE.LOCKED) ? '#16a34a' : '#ef4444';
+            drawEllipse(oCtx, detectedRing, color, 3);
+
+            if (currentState === STATE.SEARCH) {
+                stableRingCount++;
+                if (stableRingCount > 5) {
+                    currentState = STATE.LOCKED;
+                    statusEl.textContent = "КОЛЬЦО СТАБИЛИЗИРОВАНО. ГОТОВО К ЗАМЕРУ.";
+                    statusEl.style.color = "#f59e0b";
+                }
+            }
+        } else {
+            if (currentState !== STATE.SEARCH) {
+                currentState = STATE.SEARCH;
+                stableRingCount = 0;
+                statusEl.textContent = "ИЩЕМ ТЁМНОЕ КОЛЬЦО В ЦЕНТРЕ КАДРА...";
+                statusEl.style.color = "gray";
+            }
+        }
+
+        // ==========================================
+        // ЭТАП 2: ГЛУБОКИЙ АНАЛИЗ (ТОЛЬКО ЕСЛИ LOCKED)
+        // ==========================================
+        if (currentState === STATE.LOCKED) {
+            // Для поиска деталей (матрицы/дорна) можно использовать всё изображение 
+            // или тоже ограничить маской, если детали всегда в центре.
+            // Здесь используем всё изображение, чтобы найти крупные контуры.
+            cv.Canny(blurMat, edgesMat, 50, 150);
+            cv.findContours(edgesMat, contours, new cv.Mat(), cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
+
+            let bestMatrix = null;
+            let bestDorn = null;
+
+            // Поиск Матрицы (самая большая)
             for (let i = 0; i < contours.size(); i++) {
                 let cnt = contours.get(i);
-                if (cnt.total() < 30) continue;
-                
+                if (cnt.total() < 50) continue;
                 try {
                     let ellipse = cv.fitEllipse(cnt);
-                    let diameterPx = ellipse.size.width;
-                    
-                    // Проверка: дорн должен быть меньше матрицы и находиться внутри неё
-                    // Расстояние между центрами + радиус дорна < радиус матрицы
-                    let rMat = bestMatrix.diameterPx / 2;
-                    let rDorn = diameterPx / 2;
-                    
-                    let dist = Math.sqrt(
-                        Math.pow(ellipse.center.x - bestMatrix.center.x, 2) + 
-                        Math.pow(ellipse.center.y - bestMatrix.center.y, 2)
-                    );
-
-                    if (diameterPx < bestMatrix.diameterPx * 0.7 && (dist + rDorn) < rMat) {
-                        if (!bestDorn || diameterPx > bestDorn.diameterPx) {
-                            bestDorn = { ...ellipse, diameterPx: diameterPx };
-                        }
+                    // Дополнительная проверка: центр детали тоже должен быть близко к центру кадра
+                    if (Math.hypot(ellipse.center.x - centerX, ellipse.center.y - centerY) < searchRadius * 1.2) {
+                         if (!bestMatrix || ellipse.size.width > bestMatrix.size.width) {
+                            bestMatrix = ellipse;
+                         }
                     }
-                } catch (e) {
-                    continue;
+                } catch(e) {}
+            }
+
+            // Поиск Дорна
+            if (bestMatrix) {
+                for (let i = 0; i < contours.size(); i++) {
+                    let cnt = contours.get(i);
+                    if (cnt.total() < 30) continue;
+                    try {
+                        let ellipse = cv.fitEllipse(cnt);
+                        let rMat = bestMatrix.size.width / 2;
+                        let rDorn = ellipse.size.width / 2;
+                        let dist = Math.hypot(ellipse.center.x - bestMatrix.center.x, ellipse.center.y - bestMatrix.center.y);
+
+                        if (ellipse.size.width < bestMatrix.size.width * 0.7 && (dist + rDorn) < rMat) {
+                            if (!bestDorn || ellipse.size.width > bestDorn.size.width) {
+                                bestDorn = ellipse;
+                            }
+                        }
+                    } catch(e) {}
                 }
             }
 
-            // --- РАСЧЕТ МЕТРИК ---
-            
-            const dornRealMm = parseFloat(document.getElementById('dornDiam').value);
-            const matrRealMm = parseFloat(document.getElementById('matrDiam').value);
+            if (bestMatrix && bestDorn) {
+                drawEllipse(oCtx, bestMatrix, '#2563eb', 3);
+                drawEllipse(oCtx, bestDorn, '#10b981', 3);
 
-            const statusEl = document.getElementById('valStatus');
-            
-            if (!dornRealMm || !matrRealMm) {
-                statusEl.textContent = "Ошибка: Введите размеры дорна и матрицы!";
-                statusEl.style.color = "red";
-                return;
-            }
+                const dornRealMm = parseFloat(document.getElementById('dornDiam').value);
+                const matrRealMm = parseFloat(document.getElementById('matrDiam').value);
 
-            if (!bestDorn) {
-                statusEl.textContent = "Ошибка: Не найден дорн. Проверьте кадр.";
+                if (dornRealMm && matrRealMm) {
+                    const scaleMat = bestMatrix.size.width / matrRealMm;
+                    const scaleDorn = bestDorn.size.width / dornRealMm;
+                    const diffPercent = Math.abs(scaleMat - scaleDorn) / ((scaleMat + scaleDorn) / 2) * 100;
+
+                    if (diffPercent <= 3) {
+                        const pixelsPerMm = (scaleMat + scaleDorn) / 2;
+                        
+                        const shiftX = bestMatrix.center.x - bestDorn.center.x;
+                        const shiftY = bestMatrix.center.y - bestDorn.center.y;
+                        const shiftTotalMm = Math.hypot(shiftX, shiftY) / pixelsPerMm;
+
+                        const radiusDiffPx = Math.abs((bestMatrix.size.width/2) - (bestDorn.size.width/2));
+                        const nonUniformMm = radiusDiffPx / pixelsPerMm;
+
+                        frozenData = {
+                            shiftTotal: shiftTotalMm,
+                            shiftX: shiftX / pixelsPerMm,
+                            shiftY: shiftY / pixelsPerMm,
+                            nonUniform: nonUniformMm,
+                            nominalGap: (matrRealMm - dornRealMm) / 2,
+                            scale: pixelsPerMm,
+                            matrix: bestMatrix,
+                            dorn: bestDorn,
+                            ring: detectedRing
+                        };
+
+                        document.getElementById('valShift').textContent = shiftTotalMm.toFixed(2) + ' мм';
+                        document.getElementById('valNonUniform').textContent = nonUniformMm.toFixed(3) + ' мм';
+                        statusEl.textContent = "СТАБИЛЬНО. НАЖМИТЕ 'ЗАМЕР'.";
+                        statusEl.style.color = "#f59e0b";
+                    } else {
+                        statusEl.textContent = `Калибровка нестабильна (>3%). Diff: \${diffPercent.toFixed(1)}%`;
+                        statusEl.style.color = "red";
+                    }
+                } else {
+                    statusEl.textContent = "Введите размеры деталей!";
+                    statusEl.style.color = "red";
+                }
+            } else {
+                statusEl.textContent = "Детали не найдены.";
                 statusEl.style.color = "orange";
-                return;
             }
-
-            // 1. Двойная калибровка (по двум деталям)
-            const scaleMat = bestMatrix.diameterPx / matrRealMm;      // px/mm по матрице
-            const scaleDorn = bestDorn.diameterPx / dornRealMm;      // px/mm по дорну
-            
-            // Расчет разницы в процентах
-            const diffPercent = Math.abs(scaleMat - scaleDorn) / ((scaleMat + scaleDorn) / 2) * 100;
-
-            // ПРОВЕРКА НА 3%
-            if (diffPercent > 3) {
-                statusEl.textContent = `Ошибка калибровки: Расхождение > 3% (${diffPercent.toFixed(1)}%). Проверьте блики или перекрытие деталей.`;
-                statusEl.style.color = "red";
-                // Можно раскомментировать, чтобы рисовать красным, если хочешь видеть проблемные кадры
-                // drawEllipse(oCtx, bestDorn, 'red', 3); 
-                return; 
-            }
-
-            // Усредненный масштаб
-            const pixelsPerMm = (scaleMat + scaleDorn) / 2;
-
-            // Защита от абсурдных масштабов (камера слишком далеко/близко)
-            if (pixelsPerMm < 5 || pixelsPerMm > 200) {
-                statusEl.textContent = "Деталь слишком далеко или близко. Наведите камеру.";
-                statusEl.style.color = "orange";
-                return;
-            }
-
-            // 2. Смещение оси (Shift) - в мм
-            const shiftX = bestMatrix.center.x - bestDorn.center.x;
-            const shiftY = bestMatrix.center.y - bestDorn.center.y;
-            const shiftTotalPx = Math.sqrt(shiftX*shiftX + shiftY*shiftY);
-            const shiftTotalMm = shiftTotalPx / pixelsPerMm;
-
-            // 3. Отклонение от расчётного зазора (Non-uniformity) - в мм
-            // Это реальная разница радиусов на фото, переведенная в мм.
-            const radiusDiffPx = Math.abs((bestMatrix.diameterPx/2) - (bestDorn.diameterPx/2));
-            const nonUniformMm = radiusDiffPx / pixelsPerMm;
-
-            // 4. Номинальный зазор (справочный) - в мм
-            const nominalGapMm = (matrRealMm - dornRealMm) / 2;
-
-            // Вывод результатов (ВСЕ В ММ)
-            document.getElementById('valShift').textContent = shiftTotalMm.toFixed(2) + ' мм';
-            document.getElementById('valX').textContent = (shiftX / pixelsPerMm).toFixed(2) + ' мм';
-            document.getElementById('valY').textContent = (shiftY / pixelsPerMm).toFixed(2) + ' мм';
-
-            document.getElementById('valNonUniform').textContent = nonUniformMm.toFixed(3) + ' мм';
-            document.getElementById('valNominalGap').textContent = nominalGapMm.toFixed(3) + ' мм';
-
-            statusEl.textContent = `OK (Масштаб: ${pixelsPerMm.toFixed(1)} px/mm)`;
-            statusEl.style.color = "green";
-
-            // Рисуем Дорн (Зеленый)
-            drawEllipse(oCtx, bestDorn, '#16a34a', 3);
-
-        } else {
-            statusEl.textContent = "Не найдена матрица. Наведите камеру на деталь.";
-            statusEl.style.color = "orange";
         }
 
     } catch (err) {
-        console.error('❌ Ошибка обработки:', err);
-        document.getElementById('valStatus').textContent = 'Ошибка системы';
-        document.getElementById('valStatus').style.color = 'red';
+        console.error('❌ Ошибка:', err);
+        statusEl.textContent = 'Ошибка системы';
+        statusEl.style.color = 'red';
     } finally {
-        srcMat.delete();
-        grayMat.delete();
-        blurMat.delete();
-        edgesMat.delete();
-        contours.delete();
+        srcMat.delete(); grayMat.delete(); blurMat.delete(); threshMat.delete(); 
+        edgesMat.delete(); contours.delete(); maskMat.delete();
+        if ('maskedBlur' in locals()) maskedBlur.delete();
     }
-
-    frameCount++;
-    // Защита от бесконечного цикла при зависании, можно убрать если не нужно
-    if (frameCount > 1000) frameCount = 0; 
 
     requestAnimationFrame(processFrame);
 }
 
-// Вспомогательная функция для отрисовки эллипса
+function drawResult(ctx, data) {
+    ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
+    if (data.ring) drawEllipse(ctx, data.ring, '#ef4444', 4);
+    if (data.matrix) drawEllipse(ctx, data.matrix, '#2563eb', 3);
+    if (data.dorn) drawEllipse(ctx, data.dorn, '#10b981', 3);
+}
+
 function drawEllipse(ctx, ellipse, color, width) {
     ctx.beginPath();
     ctx.save();
     ctx.translate(ellipse.center.x, ellipse.center.y);
     ctx.rotate(ellipse.angle * Math.PI / 180);
-    
-    // Рисуем эллипс
     ctx.ellipse(0, 0, ellipse.size.width / 2, ellipse.size.height / 2, 0, 0, Math.PI * 2);
-    
     ctx.restore();
     ctx.strokeStyle = color;
     ctx.lineWidth = width;
     ctx.stroke();
-    
-    // Рисуем центр (квадратик)
     ctx.fillStyle = color;
     ctx.fillRect(ellipse.center.x - 4, ellipse.center.y - 4, 8, 8);
+}
+
+function freezeMeasurement() {
+    if (currentState === STATE.LOCKED && frozenData) {
+        currentState = STATE.FROZEN;
+        console.log('Данные замера:', frozenData);
+    } else {
+        alert('Сначала дождитесь статуса "СТАБИЛЬНО"');
+    }
 }
