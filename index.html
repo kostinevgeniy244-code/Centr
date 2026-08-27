@@ -1,85 +1,127 @@
 <!DOCTYPE html>
 <html lang="ru">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Замер зазора: дорн/матрица</title>
-  <link rel="stylesheet" href="style.css" />
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Контроль зазора (Экструзия)</title>
+    <style>
+        body { font-family: sans-serif; background: #f3f4f6; padding: 20px; }
+        .container { max-width: 800px; margin: 0 auto; }
+        
+        /* Контейнер видео - обязательно position: relative */
+        .video-area {
+            position: relative;
+            width: 100%;
+            max-width: 640px;
+            margin: 0 auto 20px auto;
+            aspect-ratio: 16/9;
+            background: #000;
+            overflow: hidden;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+        }
+
+        /* Все элементы внутри должны быть absolute и перекрывать друг друга */
+        .video-area > * {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            object-fit: cover; /* Важно для видео и img */
+        }
+
+        /* Стили для слоев */
+        #video { display: block; z-index: 1; }
+        #canvas { display: none; z-index: 0; } /* Скрыт, только для вычислений */
+        #overlay { display: block; z-index: 10; pointer-events: none; } /* Линии поверх видео */
+        
+        #frozenImg { display: none; z-index: 5; } /* Картинка результата */
+        #frozenOverlay { display: none; z-index: 15; pointer-events: none; } /* Линии поверх картинки */
+
+        /* Панель управления */
+        .controls { background: white; padding: 15px; border-radius: 8px; margin-bottom: 15px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        .input-group { margin-bottom: 10px; }
+        label { display: block; margin-bottom: 5px; font-weight: bold; }
+        input { width: 100%; padding: 8px; box-sizing: border-box; border: 1px solid #ccc; border-radius: 4px; }
+        
+        #btnFreeze {
+            background-color: #dc2626;
+            color: white;
+            border: none;
+            padding: 12px 20px;
+            font-size: 16px;
+            border-radius: 6px;
+            cursor: pointer;
+            width: 100%;
+            margin-top: 10px;
+        }
+        #btnFreeze:disabled { background-color: #9ca3af; cursor: not-allowed; }
+
+        /* Статус бар */
+        #valStatus {
+            margin-top: 10px;
+            padding: 10px;
+            border-radius: 6px;
+            font-weight: bold;
+            text-align: center;
+            min-height: 24px;
+        }
+
+        /* Результаты */
+        .results { background: white; padding: 15px; border-radius: 8px; margin-top: 15px; }
+        .result-item { display: flex; justify-content: space-between; margin-bottom: 8px; border-bottom: 1px solid #eee; padding-bottom: 4px; }
+    </style>
 </head>
 <body>
 
-  <div class="app-wrapper">
-    <h1>📏 Замер зазора: дорн/матрица</h1>
+<div class="container">
+    <h1>Контроль технологического зазора</h1>
 
-    <!-- Панель управления -->
-    <div class="controls-panel">
-      <div class="input-row">
-        <label>Диаметр дорна (мм)</label>
-        <input type="number" id="dornDiam" value="40" step="0.1" />
-      </div>
-      <div class="input-row">
-        <label>Диаметр матрицы (мм)</label>
-        <input type="number" id="matrDiam" value="50" step="0.1" />
-      </div>
-
-      <div class="input-row">
-        <label for="cameraSelect">Камера</label>
-        <select id="cameraSelect"></select>
-      </div>
-
-      <button id="startBtn">Старт (автозаморозка)</button>
-      <button id="resetBtn" class="reset-btn">🔄 Сброс (вернуть видеопоток)</button>
-
-      <div class="status-bar" id="statusBar">
-        <span class="dot" id="statusDot"></span>
-        <span id="statusText">Ожидание загрузки OpenCV...</span>
-      </div>
+    <!-- Панель ввода данных -->
+    <div class="controls">
+        <div class="input-group">
+            <label for="matrDiam">Диаметр матрицы (мм):</label>
+            <input type="number" id="matrDiam" value="50" step="0.1">
+        </div>
+        <div class="input-group">
+            <label for="dornDiam">Диаметр дорна (мм):</label>
+            <input type="number" id="dornDiam" value="30" step="0.1">
+        </div>
+        <button id="btnFreeze" onclick="freezeMeasurement()" disabled>🛑 ВЫПОЛНИТЬ ЗАМЕР</button>
+        <div id="valStatus">Ожидание загрузки камеры...</div>
     </div>
 
-    <!-- Результат -->
-    <div class="result-panel">
-   
-      <!-- Область видеопотока: ЕДИНСТВЕННЫЙ контейнер с размерами -->
-   <div class="video-area" style="position: relative; width: 100%; max-width: 640px; margin: 0 auto;">
-    <video id="video" autoplay muted playsinline style="width: 100%; height: auto; display: block;"></video>
-    <canvas id="canvas" style="position: absolute; top: 0; left: 0; pointer-events: none;"></canvas>
-    <canvas id="overlay" style="position: absolute; top: 0; left: 0; pointer-events: none;"></canvas>
+    <!-- Область видео и наложений -->
+    <div class="video-area">
+        <!-- 1. Живое видео (видно всегда, пока не заморожено) -->
+        <video id="video" autoplay muted playsinline></video>
+        
+        <!-- 2. Буфер для OpenCV (скрыт, нужен для расчетов) -->
+        <canvas id="canvas"></canvas>
+        
+        <!-- 3. Оверлей для живого видео (линии рисуются здесь) -->
+        <canvas id="overlay"></canvas>
+
+        <!-- 4. Замороженный кадр (картинка, появляется после замера) -->
+        <img id="frozenImg" src="" alt="Результат" class="frozen-frame" />
+        
+        <!-- 5. Оверлей для замороженного кадра (линии поверх картинки) -->
+        <canvas id="frozenOverlay" class="frozen-frame"></canvas>
+    </div>
+
+    <!-- Блок результатов -->
+    <div class="results">
+        <h3>Результаты замера</h3>
+        <div class="result-item"><span>Смещение осей (Total):</span> <span id="valShift">-- мм</span></div>
+        <div class="result-item"><span>Неравномерность зазора:</span> <span id="valNonUniform">-- мм</span></div>
+        <div class="result-item"><span>Номинальный зазор:</span> <span id="valNominal">-- мм</span></div>
+    </div>
 </div>
 
+<!-- Подключаем OpenCV -->
+<script src="https://docs.opencv.org/4.8.0/opencv.js"></script>
+<!-- Подключаем наш код -->
+<script src="core.js"></script>
 
-      <!-- Метрики -->
-      <div class="metrics-grid">
-        <div class="metric-item metric-gap">
-          <span class="metric-value" id="valGap">—</span>
-          <span class="metric-label">Зазор</span>
-        </div>
-        <div class="metric-item metric-nonuniform">
-          <span class="metric-value" id="valNonUniform">—</span>
-          <span class="metric-label">Неравномерность</span>
-        </div>
-        <div class="metric-item metric-shift">
-          <span class="metric-value" id="valShift">—</span>
-          <span class="metric-label">Макс. смещение</span>
-        </div>
-        <div class="metric-item" style="opacity:0.6">
-          <span class="metric-value" id="valX">—</span>
-          <span class="metric-label">Смещение X</span>
-        </div>
-        <div class="metric-item" style="opacity:0.6">
-          <span class="metric-value" id="valY">—</span>
-          <span class="metric-label">Смещение Y</span>
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <!-- ВАЖНО: OpenCV должен быть первым! -->
-  <script src="https://docs.opencv.org/4.8.0/opencv.js"></script>
-  
-  <!-- Инициализация камеры и размеров -->
-  <script src="init.js"></script>
-  
-  <!-- Логика обработки (ядро) -->
-  <script src="core.js"></script>
 </body>
 </html>
