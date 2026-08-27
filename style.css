@@ -48,7 +48,7 @@ h1 {
   color: var(--text);
 }
 
-/* --- Панель управления (слева) --- */
+/* --- Панель управления --- */
 .controls-panel {
   background: #f9fafb;
   border: 1px solid var(--border);
@@ -70,6 +70,7 @@ input[type="number"] {
 }
 input:focus { border-color: var(--primary); outline: none; }
 
+/* Кнопка СТАРТА */
 button#startBtn {
   margin-top: 4px;
   padding: 14px;
@@ -103,7 +104,7 @@ button#startBtn.processing { background-color: var(--warning); }
 .status-warn { color: var(--warning); }
 .status-err { color: var(--danger); }
 
-/* --- Результаты (справа) --- */
+/* --- Результаты --- */
 .result-panel {
   background: #f9fafb;
   border: 1px solid var(--border);
@@ -158,11 +159,31 @@ button#resetBtn {
   cursor: pointer;
   transition: all 0.2s;
   width: 100%;
-  display: block;
 }
 button#resetBtn:hover { background-color: #e5e7eb; }
 
-/* --- ВИДЕО ОБЛАСТЬ (ГЛАВНОЕ ИСПРАВЛЕНИЕ) --- */
+/* КНОПКА ЗАМЕРА - СТИЛИ */
+button#btnFreeze {
+  margin-top: 20px;
+  padding: 14px;
+  background-color: var(--danger);
+  color: white;
+  border: none;
+  border-radius: 10px;
+  font-size: 1rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color 0.2s, transform 0.1s;
+  width: 100%;
+}
+button#btnFreeze:hover:not(:disabled) { background-color: #b91c1c; transform: scale(1.02); }
+button#btnFreeze:disabled {
+  background-color: #9ca3af;
+  cursor: not-allowed;
+  opacity: 0.7;
+}
+
+/* --- ВИДЕО ОБЛАСТЬ --- */
 .video-area {
   position: relative;
   width: 100%;
@@ -171,31 +192,29 @@ button#resetBtn:hover { background-color: #e5e7eb; }
   background-color: #000;
   border-radius: 10px;
   box-shadow: inset 0 2px 8px rgba(0,0,0,0.2);
+  grid-column: 1 / -1; /* Растянуть на всю ширину */
 }
 
-/* 1. Живое видео */
 #video {
   position: absolute;
   top: 0; left: 0;
   width: 100%;
   height: 100%;
-  object-fit: contain; /* или cover */
+  object-fit: contain;
   z-index: 1;
   display: block;
   background: #000;
 }
 
-/* 2. Буфер для OpenCV (СКРЫТ, только для расчетов) */
 #canvas {
   position: absolute;
   top: 0; left: 0;
   z-index: 0;
-  display: none; /* КРИТИЧНО: не должно быть видно и не должно занимать место */
+  display: none; /* СКРЫТ! Не должен быть виден */
   width: 100%;
   height: 100%;
 }
 
-/* 3. Оверлей для живого видео (линии) */
 canvas#overlay {
   position: absolute;
   top: 0; left: 0;
@@ -206,7 +225,6 @@ canvas#overlay {
   height: 100%;
 }
 
-/* 4. Замороженный кадр (картинка) */
 img.frozen-frame {
   position: absolute;
   top: 0; left: 0;
@@ -214,31 +232,15 @@ img.frozen-frame {
   height: 100%;
   object-fit: contain;
   z-index: 4;
-  display: none; /* скрыто по умолчанию */
+  display: none; /* Скрыто по умолчанию */
 }
 
-/* 5. Оверлей для замороженного кадра (линии поверх картинки) */
 canvas#frozenOverlay {
   position: absolute;
   top: 0; left: 0;
   pointer-events: none;
   z-index: 5;
-  display: none; /* скрыто по умолчанию */
+  display: none; /* Скрыто по умолчанию */
   width: 100%;
   height: 100%;
 }
-button#btnFreeze {
-  margin-top: 4px;
-  padding: 14px;
-  background-color: var(--danger); /* Красный для кнопки "Стоп/Замер" */
-  color: white;
-  border: none;
-  border-radius: 10px;
-  font-size: 1rem;
-  font-weight: 600;
-  cursor: pointer;
-  transition: background-color 0.2s;
-  width: 100%;
-}
-button#btnFreeze:hover { background-color: #b91c1c; }
-button#btnFreeze:disabled { background-color: #9ca3af; cursor: not-allowed; }
