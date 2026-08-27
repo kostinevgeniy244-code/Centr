@@ -38,20 +38,14 @@
 
     <!-- Результат -->
     <div class="result-panel">
+   
       <!-- Область видеопотока: ЕДИНСТВЕННЫЙ контейнер с размерами -->
-      <div class="video-area">
-        <!-- Все слои лежат прямо внутри .video-area -->
-        <video id="video" autoplay muted playsinline></video>
-        
-        <!-- Буфер для OpenCV (не виден визуально, но должен быть в DOM) -->
-        <canvas id="canvas"></canvas>
-        
-        <!-- Оверлей для отрисовки -->
-        <canvas id="overlay"></canvas>
+   <div class="video-area" style="position: relative; width: 100%; max-width: 640px; margin: 0 auto;">
+    <video id="video" autoplay muted playsinline style="width: 100%; height: auto; display: block;"></video>
+    <canvas id="canvas" style="position: absolute; top: 0; left: 0; pointer-events: none;"></canvas>
+    <canvas id="overlay" style="position: absolute; top: 0; left: 0; pointer-events: none;"></canvas>
+</div>
 
-        <!-- Замороженный кадр -->
-        <img id="frozenImg" src="" alt="Результат" class="frozen-frame" />
-      </div>
 
       <!-- Метрики -->
       <div class="metrics-grid">
