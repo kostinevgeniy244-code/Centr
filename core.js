@@ -1,7 +1,7 @@
 let cvReady = false;
 let isRunning = true;
 
-// СОСТОЯНИЯ
+// СОСТОЯНИЯ СИСТЕМЫ
 const STATE = {
     SEARCH: 'search',
     LOCKED: 'locked',
@@ -9,10 +9,16 @@ const STATE = {
 };
 let currentState = STATE.SEARCH;
 let stableRingCount = 0;
-let frozenData = null;
+let frozenData = null; // Хранилище данных для замороженного кадра
 
-function onOpenCVLoad() { cvReady = true; }
+// --- ИНИЦИАЛИЗАЦИЯ OPENCV ---
+function onOpenCVLoad() {
+    cvReady = true;
+    console.log('✅ OpenCV загружен');
+    updateStatus("Камера активна. Наведите на деталь.", "gray");
+}
 
+// --- ГЛАВНЫЙ ЦИКЛ ОБРАБОТКИ КАДРА ---
 function processFrame() {
     if (!isRunning || !cvReady) return;
 
@@ -26,7 +32,7 @@ function processFrame() {
         return;
     }
 
-    // 1. Размеры и синхронизация
+    // 1. Синхронизация размеров
     const container = video.closest('.video-area');
     const w = container ? container.clientWidth : video.clientWidth;
     const h = container ? container.clientHeight : video.clientHeight;
@@ -43,9 +49,11 @@ function processFrame() {
 
     const ctx = canvas.getContext('2d');
     const oCtx = overlay.getContext('2d');
+    
+    // Рисуем кадр из видео на буферный канвас
     ctx.drawImage(video, 0, 0, w, h);
 
-    // --- OPENCV ---
+    // --- OPENCV ИНИЦИАЛИЗАЦИЯ МАТРИЦ ---
     let srcMat = new cv.Mat(h, w, cv.CV_8UC4);
     let grayMat = new cv.Mat();
     let blurMat = new cv.Mat();
@@ -53,8 +61,8 @@ function processFrame() {
     let edgesMat = new cv.Mat();
     let contours = new cv.MatVector();
     
-    // МАСКА ДЛЯ ЗОНЫ ПОИСКА (ROI)
-    let maskMat = new cv.Mat(h, w, cv.CV_8UC1, new cv.Scalar(0)); // Черный фон
+    // МАСКА ДЛЯ ЗОНЫ ПОИСКА (ROI) - ТОЛЬКО ЦЕНТР
+    let maskMat = new cv.Mat(h, w, cv.CV_8UC1, new cv.Scalar(0)); 
     
     try {
         const imageData = ctx.getImageData(0, 0, w, h);
@@ -69,7 +77,6 @@ function processFrame() {
         const centerX = w / 2;
         const centerY = h / 2;
         // Радиус зоны поиска: 30% от ширины кадра. 
-        // Можно менять: 0.25 (уже), 0.35 (шире)
         const searchRadius = Math.min(w, h) * 0.3; 
 
         // Рисуем белый круг на маске (разрешаем поиск только здесь)
@@ -87,34 +94,37 @@ function processFrame() {
         maskMat.data.set(maskData.data);
 
         // Применяем маску к изображению для поиска кольца
-        // Теперь мы ищем кольцо ТОЛЬКО внутри белого круга
         let maskedBlur = new cv.Mat();
         cv.bitwise_and(blurMat, blurMat, maskedBlur, maskMat);
 
         // Поиск тёмного кольца на замаскированном изображении
+        // THRESH_BINARY_INV: тёмное становится белым (для findContours)
         cv.threshold(maskedBlur, threshMat, 80, 255, cv.THRESH_BINARY_INV);
         cv.findContours(threshMat, contours, new cv.Mat(), cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
 
         let detectedRing = null;
         let minDistFromCenter = Infinity;
 
+        // Перебор контуров для поиска лучшего кольца
         for (let i = 0; i < contours.size(); i++) {
             let cnt = contours.get(i);
             if (cnt.total() < 30) continue;
 
             let area = cv.contourArea(cnt);
-            // Фильтр площади: кольцо должно быть заметным, но не гигантским
+            // Фильтр площади: отсекаем пыль и слишком большие объекты
             if (area < 200 || area > 5000) continue; 
 
             let perimeter = cv.arcLength(cnt, true);
             if (perimeter === 0) continue;
             
-            // Проверка на округлость
+            // Проверка на округлость (Circularity)
             let circularity = (4 * Math.PI * area) / (perimeter * perimeter);
+            
+            // Кольцо должно быть круглым, но не идеальным (из-за перспективы)
             if (circularity > 0.7 && circularity < 0.95) {
                 let ellipse = cv.fitEllipse(cnt);
                 
-                // ГЛАВНОЕ ИЗМЕНЕНИЕ: выбираем кольцо, ближайшее к центру кадра
+                // ГЛАВНОЕ: выбираем кольцо, ближайшее к центру кадра
                 let dist = Math.hypot(ellipse.center.x - centerX, ellipse.center.y - centerY);
                 
                 if (dist < minDistFromCenter) {
@@ -125,45 +135,44 @@ function processFrame() {
         }
 
         // ==========================================
-        // ЛОГИКА СОСТОЯНИЙ
+        // ЛОГИКА СОСТОЯНИЙ (STATE MACHINE)
         // ==========================================
         
-        // Отрисовка зоны поиска (для отладки - пунктирный круг)
-        oCtx.strokeStyle = 'rgba(255, 255, 255, 0.3)';
+        // Отрисовка зоны поиска (пунктирный круг для отладки)
+        oCtx.strokeStyle = 'rgba(255, 255, 255, 0.4)';
         oCtx.lineWidth = 2;
         oCtx.setLineDash([10, 10]);
         oCtx.beginPath();
         oCtx.arc(centerX, centerY, searchRadius, 0, Math.PI * 2);
         oCtx.stroke();
-        oCtx.setLineDash([]); // Сброс пунктира
+        oCtx.setLineDash([]); 
 
+        // Если мы в режиме FROZEN, нам не нужно анализировать видео дальше
         if (currentState === STATE.FROZEN && frozenData) {
-            drawResult(oCtx, frozenData);
-            statusEl.textContent = "ЗАМЕР ВЫПОЛНЕН (FROZEN)";
-            statusEl.style.color = "green";
-            requestAnimationFrame(processFrame);
-            return;
+            renderFrozenView();
+            return; 
         }
 
         if (detectedRing) {
-            // Рисуем кольцо
+            // Рисуем кольцо (Красный = поиск, Зеленый = стабильно)
             let color = (currentState === STATE.LOCKED) ? '#16a34a' : '#ef4444';
             drawEllipse(oCtx, detectedRing, color, 3);
 
             if (currentState === STATE.SEARCH) {
                 stableRingCount++;
-                if (stableRingCount > 5) {
+                if (stableRingCount > 5) { // 5 кадров подряд
                     currentState = STATE.LOCKED;
-                    statusEl.textContent = "КОЛЬЦО СТАБИЛИЗИРОВАНО. ГОТОВО К ЗАМЕРУ.";
-                    statusEl.style.color = "#f59e0b";
+                    updateStatus("КОЛЬЦО СТАБИЛИЗИРОВАНО. ГОТОВО К ЗАМЕРУ.", "#f59e0b");
+                    enableFreezeButton(true);
                 }
             }
         } else {
+            // Кольцо не найдено
             if (currentState !== STATE.SEARCH) {
                 currentState = STATE.SEARCH;
                 stableRingCount = 0;
-                statusEl.textContent = "ИЩЕМ ТЁМНОЕ КОЛЬЦО В ЦЕНТРЕ КАДРА...";
-                statusEl.style.color = "gray";
+                updateStatus("ИЩЕМ ТЁМНОЕ КОЛЬЦО В ЦЕНТРЕ КАДРА...", "gray");
+                enableFreezeButton(false);
             }
         }
 
@@ -171,22 +180,20 @@ function processFrame() {
         // ЭТАП 2: ГЛУБОКИЙ АНАЛИЗ (ТОЛЬКО ЕСЛИ LOCKED)
         // ==========================================
         if (currentState === STATE.LOCKED) {
-            // Для поиска деталей (матрицы/дорна) можно использовать всё изображение 
-            // или тоже ограничить маской, если детали всегда в центре.
-            // Здесь используем всё изображение, чтобы найти крупные контуры.
+            // Для поиска деталей (матрицы/дорна) используем всё изображение
             cv.Canny(blurMat, edgesMat, 50, 150);
             cv.findContours(edgesMat, contours, new cv.Mat(), cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
 
             let bestMatrix = null;
             let bestDorn = null;
 
-            // Поиск Матрицы (самая большая)
+            // Поиск Матрицы (самая большая окружность)
             for (let i = 0; i < contours.size(); i++) {
                 let cnt = contours.get(i);
                 if (cnt.total() < 50) continue;
                 try {
                     let ellipse = cv.fitEllipse(cnt);
-                    // Дополнительная проверка: центр детали тоже должен быть близко к центру кадра
+                    // Проверка: центр детали тоже должен быть близко к центру кадра
                     if (Math.hypot(ellipse.center.x - centerX, ellipse.center.y - centerY) < searchRadius * 1.2) {
                          if (!bestMatrix || ellipse.size.width > bestMatrix.size.width) {
                             bestMatrix = ellipse;
@@ -195,7 +202,7 @@ function processFrame() {
                 } catch(e) {}
             }
 
-            // Поиск Дорна
+            // Поиск Дорна (внутри матрицы)
             if (bestMatrix) {
                 for (let i = 0; i < contours.size(); i++) {
                     let cnt = contours.get(i);
@@ -206,6 +213,7 @@ function processFrame() {
                         let rDorn = ellipse.size.width / 2;
                         let dist = Math.hypot(ellipse.center.x - bestMatrix.center.x, ellipse.center.y - bestMatrix.center.y);
 
+                        // Дорн должен быть меньше матрицы и находиться внутри неё
                         if (ellipse.size.width < bestMatrix.size.width * 0.7 && (dist + rDorn) < rMat) {
                             if (!bestDorn || ellipse.size.width > bestDorn.size.width) {
                                 bestDorn = ellipse;
@@ -223,6 +231,7 @@ function processFrame() {
                 const matrRealMm = parseFloat(document.getElementById('matrDiam').value);
 
                 if (dornRealMm && matrRealMm) {
+                    // Расчет масштаба
                     const scaleMat = bestMatrix.size.width / matrRealMm;
                     const scaleDorn = bestDorn.size.width / dornRealMm;
                     const diffPercent = Math.abs(scaleMat - scaleDorn) / ((scaleMat + scaleDorn) / 2) * 100;
@@ -230,13 +239,16 @@ function processFrame() {
                     if (diffPercent <= 3) {
                         const pixelsPerMm = (scaleMat + scaleDorn) / 2;
                         
+                        // Смещение
                         const shiftX = bestMatrix.center.x - bestDorn.center.x;
                         const shiftY = bestMatrix.center.y - bestDorn.center.y;
                         const shiftTotalMm = Math.hypot(shiftX, shiftY) / pixelsPerMm;
 
+                        // Неравномерность зазора
                         const radiusDiffPx = Math.abs((bestMatrix.size.width/2) - (bestDorn.size.width/2));
                         const nonUniformMm = radiusDiffPx / pixelsPerMm;
 
+                        // Сохраняем данные
                         frozenData = {
                             shiftTotal: shiftTotalMm,
                             shiftX: shiftX / pixelsPerMm,
@@ -249,28 +261,29 @@ function processFrame() {
                             ring: detectedRing
                         };
 
+                        // Вывод в UI
                         document.getElementById('valShift').textContent = shiftTotalMm.toFixed(2) + ' мм';
                         document.getElementById('valNonUniform').textContent = nonUniformMm.toFixed(3) + ' мм';
-                        statusEl.textContent = "СТАБИЛЬНО. НАЖМИТЕ 'ЗАМЕР'.";
-                        statusEl.style.color = "#f59e0b";
+                        document.getElementById('valNominal').textContent = ((matrRealMm - dornRealMm)/2).toFixed(2) + ' мм';
+                        
+                        updateStatus("СТАБИЛЬНО. НАЖМИТЕ 'ЗАМЕР'.", "#f59e0b");
                     } else {
-                        statusEl.textContent = `Калибровка нестабильна (>3%). Diff: \${diffPercent.toFixed(1)}%`;
-                        statusEl.style.color = "red";
+                        updateStatus(`Калибровка нестабильна (>3%). Diff: \${diffPercent.toFixed(1)}%`, "red");
+                        enableFreezeButton(false);
                     }
                 } else {
-                    statusEl.textContent = "Введите размеры деталей!";
-                    statusEl.style.color = "red";
+                    updateStatus("Введите размеры деталей!", "red");
+                    enableFreezeButton(false);
                 }
             } else {
-                statusEl.textContent = "Детали не найдены.";
-                statusEl.style.color = "orange";
+                updateStatus("Детали не найдены.", "orange");
+                enableFreezeButton(false);
             }
         }
 
     } catch (err) {
-        console.error('❌ Ошибка:', err);
-        statusEl.textContent = 'Ошибка системы';
-        statusEl.style.color = 'red';
+        console.error('❌ Ошибка обработки:', err);
+        updateStatus('Ошибка системы', 'red');
     } finally {
         srcMat.delete(); grayMat.delete(); blurMat.delete(); threshMat.delete(); 
         edgesMat.delete(); contours.delete(); maskMat.delete();
@@ -280,11 +293,108 @@ function processFrame() {
     requestAnimationFrame(processFrame);
 }
 
-function drawResult(ctx, data) {
-    ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
-    if (data.ring) drawEllipse(ctx, data.ring, '#ef4444', 4);
-    if (data.matrix) drawEllipse(ctx, data.matrix, '#2563eb', 3);
-    if (data.dorn) drawEllipse(ctx, data.dorn, '#10b981', 3);
+// --- ФУНКЦИИ УПРАВЛЕНИЯ ---
+
+function freezeMeasurement() {
+    if (currentState !== STATE.LOCKED || !frozenData) {
+        alert('Сначала дождитесь статуса "СТАБИЛЬНО"');
+        return;
+    }
+
+    currentState = STATE.FROZEN;
+    
+    const video = document.getElementById('video');
+    const frozenImg = document.getElementById('frozenImg');
+    const overlay = document.getElementById('overlay');
+    const canvas = document.getElementById('canvas');
+    const frozenOverlay = document.getElementById('frozenOverlay');
+    
+    if (!video || !frozenImg || !overlay || !canvas || !frozenOverlay) return;
+
+    const w = video.clientWidth;
+    const h = video.clientHeight;
+    
+    // 1. Создаем временный канвас для "скриншота"
+    const tempCanvas = document.createElement('canvas');
+    tempCanvas.width = w;
+    tempCanvas.height = h;
+    const tempCtx = tempCanvas.getContext('2d');
+
+    // 2. Рисуем кадр из видео
+    tempCtx.drawImage(video, 0, 0, w, h);
+
+    // 3. Копируем на этот же канвас все линии из оверлея (overlay)
+    tempCtx.drawImage(overlay, 0, 0, w, h);
+
+    // 4. Сохраняем результат в IMG
+    frozenImg.src = tempCanvas.toDataURL('image/png');
+    
+    // 5. Переключаем видимость слоев
+    video.style.display = 'none';
+    overlay.style.display = 'none';
+    canvas.style.display = 'none';
+    
+    frozenImg.style.display = 'block';
+    frozenOverlay.style.display = 'block';
+
+    // 6. Обновляем статус и кнопку
+    updateStatus("✅ ЗАМЕР ВЫПОЛНЕН. ДАННЫЕ СОХРАНЕНЫ.", "green");
+    enableFreezeButton(false);
+
+    console.log('Кадр заморожен. Данные:', frozenData);
+}
+
+function renderFrozenView() {
+    const frozenImg = document.getElementById('frozenImg');
+    const frozenOverlay = document.getElementById('frozenOverlay');
+    
+    if (!frozenImg || !frozenOverlay || !frozenData) return;
+
+    const w = frozenImg.clientWidth;
+    const h = frozenImg.clientHeight;
+
+    if (frozenOverlay.width !== w || frozenOverlay.height !== h) {
+        frozenOverlay.width = w;
+        frozenOverlay.height = h;
+    }
+
+    const ctx = frozenOverlay.getContext('2d');
+    ctx.clearRect(0, 0, w, h);
+
+    // Рисуем сохраненные контуры
+    if (frozenData.ring) drawEllipse(ctx, frozenData.ring, '#ef4444', 4);
+    if (frozenData.matrix) drawEllipse(ctx, frozenData.matrix, '#2563eb', 3);
+    if (frozenData.dorn) drawEllipse(ctx, frozenData.dorn, '#10b981', 3);
+    
+    // Крестик в центре
+    ctx.strokeStyle = 'white';
+    ctx.lineWidth = 2;
+    const cx = w / 2;
+    const cy = h / 2;
+    ctx.beginPath();
+    ctx.moveTo(cx - 10, cy); ctx.lineTo(cx + 10, cy);
+    ctx.moveTo(cx, cy - 10); ctx.lineTo(cx, cy + 10);
+    ctx.stroke();
+}
+
+function stopProcessing() {
+    isRunning = false;
+}
+
+function updateStatus(text, color) {
+    const el = document.getElementById('valStatus');
+    if (el) {
+        el.textContent = text;
+        el.style.color = color;
+    }
+}
+
+function enableFreezeButton(enabled) {
+    const btn = document.getElementById('btnFreeze');
+    if (btn) {
+        btn.disabled = !enabled;
+        btn.style.opacity = enabled ? '1' : '0.5';
+    }
 }
 
 function drawEllipse(ctx, ellipse, color, width) {
@@ -301,11 +411,7 @@ function drawEllipse(ctx, ellipse, color, width) {
     ctx.fillRect(ellipse.center.x - 4, ellipse.center.y - 4, 8, 8);
 }
 
-function freezeMeasurement() {
-    if (currentState === STATE.LOCKED && frozenData) {
-        currentState = STATE.FROZEN;
-        console.log('Данные замера:', frozenData);
-    } else {
-        alert('Сначала дождитесь статуса "СТАБИЛЬНО"');
-    }
-}
+// Запуск цикла
+window.addEventListener('load', () => {
+    if (cvReady) processFrame();
+});
