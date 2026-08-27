@@ -19,7 +19,16 @@
       
       <!-- 2. Само видео (фон) -->
       <video id="video" playsinline muted></video>
-   
+<!-- Статус-бар для оператора -->
+<div id="statusOverlay" class="status-overlay">
+  <div class="status-text" id="statusText">Наведите камеру на деталь</div>
+  <div class="status-progress-bg">
+    <div class="status-progress-fill" id="statusProgress" style="width: 0%"></div>
+  </div>
+  <div class="status-hint">Стабильность: <span id="statusCount">0</span>/20 кадров</div>
+</div>
+
+      
       <!-- 3. Оверлей для отрисовки в реальном времени (контуры, векторы) -->
       <canvas id="overlay"></canvas>
 
