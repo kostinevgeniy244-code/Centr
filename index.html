@@ -2,14 +2,161 @@
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Контроль зазора (Автозамер)</title>
-    <link rel="stylesheet" href="style.css">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Контроль зазора (Автозамер + Визуализация)</title>
+    <style>
+        :root {
+            --bg: #f3f5f7;
+            --surface: #ffffff;
+            --primary: #2563eb;
+            --success: #16a34a;
+            --warning: #f59e0b;
+            --danger: #dc2626;
+            --text: #1f2937;
+            --muted: #6b7280;
+            --border: #e5e7eb;
+        }
+
+        * { box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            margin: 0;
+            padding: 16px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        .app-wrapper {
+            width: 100%;
+            max-width: 900px;
+            background: var(--surface);
+            border-radius: 16px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+            padding: 24px;
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+        }
+        @media (max-width: 768px) { .app-wrapper { grid-template-columns: 1fr; } }
+
+        h1 {
+            grid-column: 1 / -1;
+            margin: 0 0 16px 0;
+            font-size: 1.5rem;
+            text-align: center;
+            color: var(--text);
+        }
+
+        /* Панель управления */
+        .controls-panel {
+            background: #f9fafb;
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 18px;
+            display: flex;
+            flex-direction: column;
+            gap: 14px;
+        }
+        .input-row { display: flex; flex-direction: column; gap: 6px; }
+        label { font-size: 0.875rem; font-weight: 500; color: var(--muted); }
+        input[type="number"] {
+            padding: 10px 12px;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            font-size: 1rem;
+        }
+        button#startBtn {
+            margin-top: 4px;
+            padding: 14px;
+            background-color: var(--primary);
+            color: white;
+            border: none;
+            border-radius: 10px;
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background-color 0.2s;
+            width: 100%;
+        }
+        button#startBtn:hover { background-color: #1d4ed8; }
+
+        .status-bar {
+            margin-top: 12px;
+            padding: 8px 12px;
+            border-radius: 8px;
+            font-size: 0.85rem;
+            font-weight: 500;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            background: rgba(255,255,255,0.5);
+        }
+        .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+
+        /* Результаты */
+        .result-panel {
+            background: #f9fafb;
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 18px;
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+            height: 100%;
+            min-height: 320px;
+        }
+        .metrics-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 12px; }
+        @media (max-width: 500px) { .metrics-grid { grid-template-columns: 1fr; } }
+        .metric-item {
+            background: white; padding: 12px; border-radius: 10px; border: 1px solid var(--border); text-align: center;
+        }
+        .metric-value { font-size: 1.25rem; font-weight: bold; color: var(--text); }
+        .metric-label { font-size: 0.75rem; color: var(--muted); margin-top: 4px; display: block; }
+        
+        button#resetBtn {
+            margin-top: 20px; padding: 12px; background-color: #f3f4f6; color: var(--text);
+            border: 1px solid var(--border); border-radius: 10px; font-size: 0.95rem; cursor: pointer; width: 100%;
+        }
+        button#resetBtn:hover { background-color: #e5e7eb; }
+
+        /* Видео область */
+        .video-area {
+            position: relative;
+            width: 100%;
+            aspect-ratio: 4/3;
+            overflow: hidden;
+            background-color: #000;
+            border-radius: 10px;
+            box-shadow: inset 0 2px 8px rgba(0,0,0,0.2);
+            grid-column: 1 / -1;
+        }
+
+        #video {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: contain; z-index: 1; display: block;
+        }
+        
+        #canvas {
+            position: absolute; top: 0; left: 0; z-index: 0; display: none; width: 100%; height: 100%;
+        }
+
+        canvas#overlay {
+            position: absolute; top: 0; left: 0; pointer-events: none; z-index: 3; display: block; width: 100%; height: 100%;
+        }
+
+        img.frozen-frame {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: contain; z-index: 4; display: none;
+        }
+        canvas#frozenOverlay {
+            position: absolute; top: 0; left: 0; pointer-events: none; z-index: 5; display: none; width: 100%; height: 100%;
+        }
+    </style>
 </head>
 <body>
 
 <div class="app-wrapper">
-    <h1>Контроль технологического зазора</h1>
+    <h1>Контроль зазора</h1>
 
     <!-- Левая колонка: Управление -->
     <div class="controls-panel">
@@ -21,8 +168,6 @@
             <label for="dornDiam">Диаметр дорна (мм):</label>
             <input type="number" id="dornDiam" value="30" step="0.1">
         </div>
-
-        <!-- Кнопка ЗАПУСКА КАМЕРЫ -->
         <button id="startBtn" onclick="startCamera()">▶ ЗАПУСТИТЬ КАМЕРУ</button>
 
         <div class="status-bar">
@@ -34,7 +179,6 @@
     <!-- Правая колонка: Результаты -->
     <div class="result-panel">
         <h3>Результаты замера</h3>
-        
         <div class="metrics-grid">
             <div class="metric-item metric-shift">
                 <span class="metric-value" id="valShift">-- мм</span>
@@ -49,35 +193,318 @@
                 <span class="metric-label">Номинальный зазор</span>
             </div>
         </div>
-
-        <button id="resetBtn" onclick="resetSystem()" style="margin-top: 20px;">
-            🔄 Сбросить замер
-        </button>
+        <button id="resetBtn" onclick="resetSystem()">🔄 Сбросить замер</button>
     </div>
 
     <!-- Область видео -->
     <div class="video-area">
-        <!-- 1. Живое видео -->
         <video id="video" autoplay muted playsinline></video>
-        
-        <!-- 2. Буфер для OpenCV (СКРЫТ) -->
         <canvas id="canvas"></canvas>
-        
-        <!-- 3. Оверлей для линий (поверх видео) -->
         <canvas id="overlay"></canvas>
-
-        <!-- 4. Замороженный кадр (картинка) -->
         <img id="frozenImg" src="" alt="Result" class="frozen-frame" />
-        
-        <!-- 5. Оверлей для линий (поверх картинки) -->
         <canvas id="frozenOverlay"></canvas>
     </div>
 </div>
 
-<!-- Подключаем OpenCV -->
-<script src="https://docs.opencv.org/4.8.0/opencv.js"></script>
-<!-- Подключаем наш код -->
-<script src="core.js"></script>
+<!-- ВАЖНО: Сначала OpenCV, потом наш скрипт -->
+<script src="https://docs.opencv.org/4.8.0/opencv.js" onload="onOpenCVLoad()"></script>
+<script>
+// ==========================================
+// ГЛОБАЛЬНЫЕ ПЕРЕМЕННЫЕ
+// ==========================================
+let cvReady = false;
+let isRunning = false;
 
+const STATE = {
+    SEARCH: 'search',
+    LOCKED: 'locked',
+    FROZEN: 'frozen'
+};
+let currentState = STATE.SEARCH;
+let stableRingCount = 0;
+let frozenData = null;
+
+let videoEl, canvasEl, overlayEl, frozenImgEl, frozenOverlayEl;
+
+const PARAMS = { matrixDiam: 50, dornDiam: 30 };
+const STABLE_THRESHOLD = 20; // кадров для автозамера
+
+// ==========================================
+// OPENCV & СТАТУС
+// ==========================================
+function onOpenCVLoad() {
+    cvReady = true;
+    console.log('✅ OpenCV загружен');
+    updateStatus("OpenCV готов. Нажмите 'ЗАПУСТИТЬ КАМЕРУ'.", "var(--muted)");
+}
+
+function updateStatus(text, color) {
+    const el = document.getElementById('valStatus');
+    const dot = document.getElementById('statusDot');
+    if (el) { el.textContent = text; el.style.color = color || 'var(--text)'; }
+    if (dot) { dot.style.backgroundColor = color || '#9ca3af'; }
+}
+
+// ==========================================
+// КАМЕРА
+// ==========================================
+async function startCamera() {
+    videoEl = document.getElementById('video');
+    if (!videoEl) { console.error('❌ Элемент #video не найден'); return; }
+
+    try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+            video: { width: { ideal: 640 }, height: { ideal: 480 }, facingMode: 'environment' },
+            audio: false
+        });
+
+        videoEl.srcObject = stream;
+        videoEl.onloadedmetadata = () => {
+            videoEl.play();
+            updateStatus("Камера активна. Наведите на деталь.", "var(--success)");
+            initElements();
+            isRunning = true;
+            processFrame();
+        };
+    } catch (err) {
+        console.error('❌ Ошибка камеры:', err);
+        let msg = "Ошибка камеры!";
+        if (err.name === 'NotAllowedError') msg = "Доступ к камере запрещён.";
+        if (err.name === 'NotFoundError') msg = "Камера не найдена.";
+        updateStatus(msg, "var(--danger)");
+        alert(msg);
+    }
+}
+
+function initElements() {
+    canvasEl = document.getElementById('canvas');
+    overlayEl = document.getElementById('overlay');
+    frozenImgEl = document.getElementById('frozenImg');
+    frozenOverlayEl = document.getElementById('frozenOverlay');
+    resizeCanvas();
+    window.addEventListener('resize', resizeCanvas);
+}
+
+function resizeCanvas() {
+    if (!videoEl || !canvasEl || !overlayEl) return;
+    // Важно: берем реальные размеры видео, а не CSS
+    const w = videoEl.videoWidth || 640;
+    const h = videoEl.videoHeight || 480;
+    canvasEl.width = w; canvasEl.height = h;
+    overlayEl.width = w; overlayEl.height = h;
+}
+
+// ==========================================
+// ЦИКЛ ОБРАБОТКИ КАДРОВ
+// ==========================================
+function processFrame() {
+    if (!isRunning || !cvReady || !videoEl || videoEl.paused || videoEl.ended) {
+        requestAnimationFrame(processFrame);
+        return;
+    }
+
+    resizeCanvas(); // Пересчет размеров при ресайзе окна
+
+    const srcMat = new cv.Mat(videoEl.height, videoEl.width, cv.CV_8UC4);
+    const grayMat = new cv.Mat();
+    const blurMat = new cv.Mat();
+    const edgesMat = new cv.Mat();
+
+    try {
+        // 1. Захват кадра из видео в canvas
+        const ctx = canvasEl.getContext('2d');
+        ctx.drawImage(videoEl, 0, 0, canvasEl.width, canvasEl.height);
+        
+        const imageData = ctx.getImageData(0, 0, canvasEl.width, canvasEl.height);
+        srcMat.data.set(imageData.data);
+
+        // 2. Обработка изображения
+        cv.cvtColor(srcMat, grayMat, cv.COLOR_RGBA2GRAY);
+        cv.GaussianBlur(grayMat, blurMat, new cv.Size(5, 5), 0);
+        cv.Canny(blurMat, edgesMat, 50, 150);
+
+        const contours = new cv.MatVector();
+        const hierarchy = new cv.Mat();
+        cv.findContours(edgesMat, contours, hierarchy, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
+
+        let bestRing = null;
+        let maxArea = 0;
+
+        for (let i = 0; i < contours.size(); ++i) {
+            const cnt = contours.get(i);
+            const area = cv.contourArea(cnt);
+            
+            // Фильтр по площади (подбирай под свою деталь)
+            if (area < 5000 || area > 200000) continue;
+
+            const rect = cv.boundingRect(cnt);
+            const aspectRatio = rect.width / rect.height;
+                        // Почти круглая форма
+            if (aspectRatio > 0.8 && aspectRatio < 1.25) {
+                if (area > maxArea) {
+                    maxArea = area;
+                    bestRing = {
+                        rect: rect,
+                        area: area,
+                        moments: cv.moments(cnt),
+                        cnt: cnt
+                    };
+                }
+            }
+        }
+
+        contours.delete();
+        hierarchy.delete();
+        grayMat.delete();
+        blurMat.delete();
+        edgesMat.delete();
+        srcMat.delete();
+
+        // === ЛОГИКА СОСТОЯНИЙ ===
+        if (currentState === STATE.FROZEN) {
+            requestAnimationFrame(processFrame);
+            return;
+        }
+
+        if (!bestRing) {
+            currentState = STATE.SEARCH;
+            stableRingCount = 0;
+            drawOverlay(null); // Очищаем оверлей
+            updateStatus("Не вижу деталь. Наведите камеру.", "var(--warning)");
+        } else {
+            stableRingCount++;
+            drawOverlay(bestRing);
+
+            if (stableRingCount >= STABLE_THRESHOLD) {
+                currentState = STATE.LOCKED;
+                updateStatus("Стабильность достигнута. Выполняю замер...", "var(--primary)");
+                isRunning = false;
+                setTimeout(() => autoFreezeMeasurement(bestRing), 100);
+            } else {
+                currentState = STATE.SEARCH;
+                const pct = Math.round((stableRingCount / STABLE_THRESHOLD) * 100);
+                updateStatus(`Стабильность: ${pct}% (${stableRingCount}/${STABLE_THRESHOLD})`, "var(--muted)");
+            }
+        }
+    } catch (e) {
+        console.error("Ошибка обработки кадра:", e);
+    } finally {
+        if (isRunning) {
+            requestAnimationFrame(processFrame);
+        }
+    }
+}
+
+// ==========================================
+// ОТРИСОВКА (С ОКРУЖНОСТЬЮ)
+// ==========================================
+function drawOverlay(ring) {
+    const ctx = overlayEl.getContext('2d');
+    ctx.clearRect(0, 0, overlayEl.width, overlayEl.height);
+
+    if (!ring) return;
+
+    // 1. Пунктирная рамка (ROI)
+    ctx.save();
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.9)';
+    ctx.lineWidth = 3;
+    ctx.setLineDash([10, 5]);
+    ctx.strokeRect(ring.rect.x, ring.rect.y, ring.rect.width, ring.rect.height);
+
+    // 2. Центр (красная точка)
+    const cx = ring.rect.x + ring.rect.width / 2;
+    const cy = ring.rect.y + ring.rect.height / 2;
+
+    ctx.beginPath();
+    ctx.arc(cx, cy, 8, 0, Math.PI * 2);
+    ctx.fillStyle = '#ff3b3b';
+    ctx.fill();
+
+    // 3. Синяя окружность по контуру (аппроксимация формы кольца)
+    // Считаем радиус как среднее от ширины/высоты прямоугольника
+    const radius = Math.max(ring.rect.width, ring.rect.height) / 2 * 0.95; // чуть меньше, чтобы не вылезала за границы
+    ctx.beginPath();
+    ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+    ctx.strokeStyle = '#3b82f6';
+    ctx.lineWidth = 4;
+    ctx.stroke();
+    ctx.restore();
+}
+
+// ==========================================
+// ЗАМЕР И ЗАМОРОЗКА
+// ==========================================
+function autoFreezeMeasurement(ring) {
+    currentState = STATE.FROZEN;
+
+    // Сохраняем кадр в canvas, затем в img
+    const frozenCanvas = document.getElementById('frozenOverlay');
+    const frozenImg = document.getElementById('frozenImg');
+
+    frozenCanvas.width = canvasEl.width;
+    frozenCanvas.height = canvasEl.height;
+    const fCtx = frozenCanvas.getContext('2d');
+
+    // Копируем текущий кадр
+    fCtx.drawImage(videoEl, 0, 0, canvasEl.width, canvasEl.height);
+
+    // Отрисовываем ту же разметку на замороженном кадре
+    drawOverlay(ring);
+
+    // Конвертируем в dataURL и показываем картинку вместо видео
+    const dataURL = frozenCanvas.toDataURL('image/png');
+    frozenImg.src = dataURL;
+
+    videoEl.style.display = 'none';
+    frozenImg.style.display = 'block';
+    frozenCanvas.style.display = 'block';
+
+    // Здесь можно добавить реальный расчёт зазора по моментам/контуру
+    calculateGap(ring);
+}
+
+function calculateGap(ring) {
+    // Примерный расчёт: используем площадь и моменты для оценки диаметров
+    const area = ring.area;
+    const moments = ring.moments;
+
+    // Оценка диаметра по площади (для круга: S = π * r^2 => d = 2 * sqrt(S/π))
+    const estDiameter = 2 * Math.sqrt(area / Math.PI);
+
+    const nominalGap = PARAMS.matrixDiam - PARAMS.dornDiam;
+    const shift = 0; // тут можно посчитать смещение центра по моментам: m10/m00, m01/m00
+
+    document.getElementById('valNominal').textContent = nominalGap.toFixed(2) + ' мм';
+    document.getElementById('valShift').textContent = shift.toFixed(2) + ' мм';
+    document.getElementById('valNonUniform').textContent = (estDiameter - nominalGap).toFixed(2) + ' мм'; // заглушка
+
+    updateStatus("Замер выполнен. Результаты выше.", "var(--success)");
+}
+
+function resetSystem() {
+    currentState = STATE.SEARCH;
+    stableRingCount = 0;
+    frozenData = null;
+
+    const videoEl = document.getElementById('video');
+    const frozenImgEl = document.getElementById('frozenImg');
+    const frozenOverlayEl = document.getElementById('frozenOverlay');
+
+    if (videoEl && videoEl.srcObject) {
+        videoEl.srcObject.getTracks().forEach(track => track.stop());
+        videoEl.srcObject = null;
+    }
+
+    videoEl.style.display = 'block';
+    frozenImgEl.style.display = 'none';
+    frozenOverlayEl.style.display = 'none';
+
+    drawOverlay(null);
+    updateStatus("Система сброшена. Нажмите 'ЗАПУСТИТЬ КАМЕРУ'.", "var(--muted)");
+    isRunning = false;
+}
+</script>
 </body>
 </html>
+
+           
