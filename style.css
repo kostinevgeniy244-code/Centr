@@ -183,7 +183,7 @@ button#resetBtn:hover { background-color: #e5e7eb; }
   left: 0;
   width: 100%;
   height: 100%;
-  object-fit: contain; /* Полный кадр без обрезки — координаты канваса совпадают */
+  object-fit: contain;
   z-index: 1;
   display: block;
   background: #000;
@@ -328,3 +328,5 @@ canvas#overlay {
 .status-overlay.state-search .status-progress-fill { background: #ef4444; }
 .status-overlay.state-locked .status-progress-fill { background: #10b981; }
 .status-overlay.state-frozen .status-progress-fill { background: #6366f1; }
+
+/* КОНЕЦ ФАЙЛА */
