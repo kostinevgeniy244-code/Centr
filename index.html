@@ -14,32 +14,22 @@
 
     <!-- Видео область -->
     <div class="video-area">
-      <!-- 1. Скрытый canvas для тяжелых вычислений OpenCV (не виден пользователю) -->
       <canvas id="canvas" style="display:none;"></canvas>
-      
-      <!-- 2. Само видео (фон) -->
       <video id="video" playsinline muted></video>
-<!-- Статус-бар для оператора -->
-<div id="statusOverlay" class="status-overlay">
-  <div class="status-text" id="statusText">Наведите камеру на деталь</div>
-  <div class="status-progress-bg">
-    <div class="status-progress-fill" id="statusProgress" style="width: 0%"></div>
-  </div>
-  <div class="status-hint">Стабильность: <span id="statusCount">0</span>/20 кадров</div>
-</div>
 
-      
-      <!-- 3. Оверлей для отрисовки в реальном времени (контуры, векторы) -->
+      <div id="statusOverlay" class="status-overlay">
+        <div class="status-text" id="statusText">Наведите камеру на деталь</div>
+        <div class="status-progress-bg">
+          <div class="status-progress-fill" id="statusProgress" style="width: 0%"></div>
+        </div>
+        <div class="status-hint">Стабильность: <span id="statusCount">0</span>/20 кадров</div>
+      </div>
+
       <canvas id="overlay"></canvas>
 
-      <!-- 4. ПЕРЕКРЕСТИЕ (Добавлено сюда!) -->
+      <div class="crosshair-fixed"></div>
 
-<div class="crosshair-fixed"></div>
-      
-      <!-- 5. Замороженный кадр (после замера) -->
       <img id="frozenImg" class="frozen-frame" />
-      
-      <!-- 6. Оверлей поверх замороженного кадра (финальные цифры) -->
       <canvas id="frozenOverlay"></canvas>
     </div>
 
@@ -57,14 +47,13 @@
       <button id="startBtn">ЗАПУСТИТЬ КАМЕРУ</button>
       <div class="status-bar">
         <span class="dot" id="statusDot"></span>
-        <span id="statusText">Ожидание OpenCV...</span>
+        <span id="statusTextPanel">Ожидание OpenCV...</span>
       </div>
     </div>
 
     <div class="result-panel">
       <h2>Результаты замера</h2>
       <div class="metrics-grid">
-        <!-- Основные метрики -->
         <div class="metric-item metric-gap">
           <span class="metric-value" id="valGap">--</span>
           <span class="metric-label">Средний зазор</span>
@@ -87,7 +76,6 @@
           <span class="metric-label">Смещение Y</span>
         </div>
 
-        <!-- Осевые зазоры -->
         <div class="metric-item metric-left">
           <span class="metric-value" id="valGapLeft">--</span>
           <span class="metric-label">Зазор слева</span>
@@ -110,7 +98,6 @@
     </div>
   </div>
 
-  <!-- Модули (порядок важен: сначала OpenCV, потом core, потом result, потом init) -->
   <script src="core.js"></script>
   <script src="result.js"></script>
   <script src="init.js"></script>
