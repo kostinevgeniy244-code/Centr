@@ -1,5 +1,3 @@
-// core.js - ПОЛНАЯ ВЕРСИЯ С БУФЕРОМ КАДРОВ
-
 let cvReady = false;
 let isRunning = false;
 
@@ -13,11 +11,12 @@ let currentState = STATE.SEARCH;
 let videoEl, canvasEl, overlayEl, frozenImgEl, frozenOverlayEl;
 
 const PARAMS = {
-  matrixDiam: 12.4,
-  dornDiam: 9.3
+  matrixDiam: 12.4, // Диаметр матрицы (внешний контур)
+  dornDiam: 9.3     // Диаметр дорна (внутренний контур)
 };
-const MIN_CIRCULARITY = 0.7;
-const MIN_AREA = 1000;
+
+const MIN_CIRCULARITY = 0.75; // Чуть строже, чтобы отсечь овалы
+const MIN_AREA = 1500;         // Чуть больше, чтобы игнорировать шум
 const GOOD_FRAMES_NEEDED = 20;
 
 // Буфер хороших кадров
@@ -169,29 +168,49 @@ function processFrame() {
 
   const grayMat = new cv.Mat();
   const blurMat = new cv.Mat();
-  const threshMat = new cv.Mat();
+  const edgesMat = new cv.Mat(); // Используем Canny вместо Threshold
   const contours = new cv.MatVector();
   const hierarchy = new cv.Mat();
 
   try {
     cv.cvtColor(srcMat, grayMat, cv.COLOR_BGRA2GRAY);
     cv.GaussianBlur(grayMat, blurMat, new cv.Size(5, 5), 0);
-    cv.adaptiveThreshold(blurMat, threshMat, 255, cv.ADAPTIVE_THRESH_GAUSSIAN_C, cv.THRESH_BINARY_INV, 11, 2);
-    cv.findContours(threshMat, contours, hierarchy, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
+    
+    // ВАЖНО: Используем Canny для поиска границ. Это лучше работает с разрывами от бликов.
+    // Пороги 40 и 120 подобраны для контрастных металлических деталей.
+    cv.Canny(blurMat, edgesMat, 40, 120); 
+
+    cv.findContours(edgesMat, contours, hierarchy, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
 
     const candidates = [];
+    const centerX = w / 2;
+    const centerY = h / 2;
+    // Фильтр: объект должен быть в центральной зоне (радиус 35% от кадра)
+    const maxDistFromCenter = Math.min(w, h) * 0.35; 
+
     for (let i = 0; i < contours.size(); i++) {
       const cnt = contours.get(i);
       const area = cv.contourArea(cnt);
+      
       if (area < MIN_AREA) continue;
 
       const perimeter = cv.arcLength(cnt, true);
       if (perimeter === 0) continue;
+      
       const circularity = (4 * Math.PI * area) / (perimeter * perimeter);
       if (circularity < MIN_CIRCULARITY) continue;
       if (cnt.total() < 5) continue;
 
       const ellipse = cv.fitEllipse(cnt);
+      
+      // ПРОВЕРКА: Центр эллипса должен быть близко к центру экрана
+      const distFromCenter = Math.hypot(
+        ellipse.center.x - centerX, 
+        ellipse.center.y - centerY
+      );
+      
+      if (distFromCenter > maxDistFromCenter) continue; // ОТСЕКАЕМ края и мусор
+
       candidates.push({
         center: { x: ellipse.center.x, y: ellipse.center.y },
         rx: ellipse.size.width / 2,
@@ -201,185 +220,141 @@ function processFrame() {
       });
     }
 
-    srcMat.delete(); grayMat.delete(); blurMat.delete(); threshMat.delete();
-    contours.delete(); hierarchy.delete();
+    // Сортируем кандидатов по радиусу (предполагаем, что внешний контур больше)
+    candidates.sort((a, b) => b.avgRadius - a.avgRadius);
 
-    // --- ЛОГИКА БУФЕРА КАДРОВ ---
-    if (!isMeasuring && candidates.length >= 2) {
-      candidates.sort((a, b) => a.avgRadius - b.avgRadius);
-      const inner = candidates[0];
-      const outer = candidates[candidates.length - 1];
+    let inner = null;
+    let outer = null;
 
-      // Оценка качества кадра:
-      // выше circularity + меньше вытянутость эллипса = лучше
-      const score =
-        (inner.circularity + outer.circularity) / 2
-        - Math.abs(inner.rx - inner.ry) / inner.rx
-        - Math.abs(outer.rx - outer.ry) / outer.rx;
+    // Пытаемся найти пару: самый большой (матрица) и следующий за ним (дорн)
+    if (candidates.length >= 2) {
+      outer = candidates; // Внешний контур (матрица)
+      inner = candidates[1](https://stackoverflow.com/questions/59334122/how-can-i-get-coordinates-of-points-of-contour-corners-in-opencv-js); // Внутренний контур (дорн)
+      
+      // Дополнительная проверка: внутренний должен быть существенно меньше внешнего
+      if (inner.avgRadius > outer.avgRadius * 0.8) {
+        inner = null; // Если размеры похожи, это не кольцо внутри кольца
+      }
+    }
 
-      // Сохраняем кадр в буфер
+    // Отрисовка найденных контуров для отладки
+    if (outer) {
+      ctx.strokeStyle = '#00ff00';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.ellipse(outer.center.x, outer.center.y, outer.rx, outer.ry, 0, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+    if (inner) {
+      ctx.strokeStyle = '#ff00ff';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.ellipse(inner.center.x, inner.center.y, inner.rx, inner.ry, 0, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+
+    // Логика накопления буфера
+    if (inner && outer) {
+      if (currentState !== STATE.LOCKED) {
+        currentState = STATE.LOCKED;
+        updateStatus('ok', 'Деталь найдена. Накопление кадров...');
+        goodFramesBuffer = []; // Сброс буфера при новом захвате
+      }
+
+      // Расчет качества кадра (Score)
+      // 1. Балл за округлость
+      const shapeScore = (inner.circularity + outer.circularity) / 2;
+      
+      // 2. Штраф за вытянутость эллипса
+      const aspectPenalty = Math.abs(inner.rx - inner.ry) / inner.rx + Math.abs(outer.rx - outer.ry) / outer.rx;
+      
+      // 3. Оценка контраста (темное кольцо vs светлый фон)
+      // Получаем ROI для внутреннего кольца
+      const innerRect = new cv.Rect(
+        Math.max(0, inner.center.x - inner.rx), 
+        Math.max(0, inner.center.y - inner.ry), 
+        inner.rx * 2, 
+        inner.ry * 2
+      );
+      const innerROI = grayMat.roi(innerRect);
+      const meanInner = cv.mean(innerROI);
+      const innerDarkness = meanInner.val; // 0-255
+
+      // Получаем ROI для внешнего кольца
+      const outerRect = new cv.Rect(
+        Math.max(0, outer.center.x - outer.rx), 
+        Math.max(0, outer.center.y - outer.ry), 
+        outer.rx * 2, 
+        outer.ry * 2
+      );
+      const outerROI = grayMat.roi(outerRect);
+      const meanOuter = cv.mean(outerROI);
+      const outerBrightness = meanOuter.val;
+
+      // Контраст между кольцами
+      const contrastScore = Math.abs(innerDarkness - outerBrightness) / 255.0;
+
+      // Итоговый скор (нормализованный)
+      const score = shapeScore - aspectPenalty + contrastScore;
+
       goodFramesBuffer.push({ inner, outer, score });
 
-      // Рисуем найденные кольца
-      drawOverlayLive(ctx, inner, outer);
-
-      // Обновляем статус
-      currentState = STATE.LOCKED;
-      const collected = goodFramesBuffer.length;
-      const percent = Math.min((collected / GOOD_FRAMES_NEEDED) * 100, 100);
-      const progressFill = document.getElementById('statusProgress');
-      const progressCount = document.getElementById('statusCount');
-      if (progressFill) progressFill.style.width = percent + '%';
-      if (progressCount) progressCount.textContent = collected;
-      updateStatus('warn', `Накопление: ${collected}/${GOOD_FRAMES_NEEDED}`);
-
-      // Набрали нужное количество — выбираем лучший
-      if (goodFramesBuffer.length >= GOOD_FRAMES_NEEDED) {
-        isMeasuring = true;
-
-        let best = goodFramesBuffer[0];
-        for (const f of goodFramesBuffer) {
-          if (f.score > best.score) best = f;
-        }
-
-        console.log(
-          '🏆 Лучший кадр: score =', best.score.toFixed(4),
-          'inner circ =', best.inner.circularity.toFixed(3),
-          'outer circ =', best.outer.circularity.toFixed(3)
-        );
-
-        currentState = STATE.FROZEN;
-        updateStatus('warn', 'Лучший кадр выбран. Замер...');
-
-        freezeFrameAndMeasure(best.inner, best.outer);
-
-        // Очищаем буфер для следующего замера
-        goodFramesBuffer = [];
-        isMeasuring = false;
+      // Сортируем буфер по качеству и оставляем только лучшие кадры
+      goodFramesBuffer.sort((a, b) => b.score - a.score);
+      if (goodFramesBuffer.length > 50) {
+        goodFramesBuffer = goodFramesBuffer.slice(0, 50);
       }
-    } else if (!isMeasuring) {
-      // Пара не найдена — просто ждём, буфер НЕ сбрасываем
-      currentState = STATE.SEARCH;
-      updateStatus('warn', 'Не вижу деталь. Наведите камеру.');
-    }
-    // ----------------------------
 
-  } catch (e) {
-    console.error('💥 Ошибка в обработке кадра:', e);
+      // Если набрали достаточно кадров, переходим в режим заморозки
+      if (goodFramesBuffer.length >= GOOD_FRAMES_NEEDED) {
+        freezeResult(w, h);
+      }
+    } else {
+      if (currentState === STATE.LOCKED) {
+        // Если потеряли деталь, сбрасываем состояние
+        currentState = STATE.SEARCH;
+        updateStatus('warn', 'Деталь потеряна. Наведите камеру.');
+        goodFramesBuffer = [];
+      }
+    }
+
+  } catch (err) {
+    console.error('❌ Ошибка обработки кадра:', err);
+  } finally {
+    // Освобождение памяти
+    srcMat.delete();
+    grayMat.delete();
+    blurMat.delete();
+    edgesMat.delete();
+    contours.delete();
+    hierarchy.delete();
   }
 
   requestAnimationFrame(processFrame);
 }
 
-function drawOverlayLive(ctx, inner, outer) {
-  // Рисуем найденные кольца (зелёные)
-  drawCircle(ctx, inner.center.x, inner.center.y, inner.rx, 'green', 3);
-  drawCircle(ctx, outer.center.x, outer.center.y, outer.rx, 'green', 3);
-
-  // Вектор смещения (оранжевый)
-  ctx.beginPath();
-  ctx.moveTo(inner.center.x, inner.center.y);
-  ctx.lineTo(outer.center.x, outer.center.y);
-  ctx.strokeStyle = '#f59e0b';
-  ctx.lineWidth = 3;
-  ctx.stroke();
-}
-
-function freezeFrameAndMeasure(inner, outer) {
-  isRunning = false;
+function freezeResult(w, h) {
   currentState = STATE.FROZEN;
+  updateStatus('ok', 'Измерение завершено!');
+  
+  // Берем лучший кадр из буфера
+  const best = goodFramesBuffer;
+  
+  // Расчет масштаба (px per mm)
+  // Используем усреднение по двум эталонам для компенсации перспективы
+  const pxPerMmMatrix = PARAMS.matrixDiam / (best.outer.rx * 2);
+  const pxPerMmDorn = PARAMS.dornDiam / (best.inner.rx * 2);
+  const pxPerMm = (pxPerMmMatrix + pxPerMmDorn) / 2;
 
-  if (!canvasEl || !videoEl) return;
+  // Расчет диаметров в мм на основе лучшего кадра
+  const measuredMatrixDiam = (best.outer.rx * 2) * pxPerMm;
+  const measuredDornDiam = (best.inner.rx * 2) * pxPerMm;
 
-  canvasEl.width = videoEl.videoWidth;
-  canvasEl.height = videoEl.videoHeight;
-  const frozenCtx = canvasEl.getContext('2d');
-  if (!frozenCtx) return;
-  frozenCtx.drawImage(videoEl, 0, 0);
+  console.log('Результаты измерения:');
+  console.log(`Матрица (эталон ${PARAMS.matrixDiam} мм): ${measuredMatrixDiam.toFixed(2)} мм`);
+  console.log(`Дорн (эталон ${PARAMS.dornDiam} мм): ${measuredDornDiam.toFixed(2)} мм`);
+  console.log(`Масштаб: 1 мм = \${pxPerMm.toFixed(3)} px`);
 
-  calculateOnFrozen(canvasEl, canvasEl.width, canvasEl.height, inner, outer);
+  // Здесь можно вызвать функцию для отображения результатов в UI
+  // showResults(measuredMatrixDiam, measuredDornDiam, pxPerMm);
 }
-
-function calculateOnFrozen(canvas, w, h, inner, outer) {
-  // Масштаб: пиксели в мм по известному диаметру матрицы
-  const pxPerMm = PARAMS.matrixDiam / (outer.rx * 2);
-
-  const dornPx = inner.rx * 2;
-  const matrixPx = outer.rx * 2;
-
-  const dornMm = dornPx * pxPerMm;
-  const matrixMm = matrixPx * pxPerMm;
-
-  // Смещение центров
-  const dx = outer.center.x - inner.center.x;
-  const dy = outer.center.y - inner.center.y;
-  const offsetMm = Math.sqrt(dx * dx + dy * dy) * pxPerMm;
-
-  // Неравномерность (разница радиусов по осям)
-  const innerUneven = Math.abs(inner.rx - inner.ry);
-  const outerUneven = Math.abs(outer.rx - outer.ry);
-
-  console.log({
-    dornMm: dornMm.toFixed(3),
-    matrixMm: matrixMm.toFixed(3),
-    offsetMm: offsetMm.toFixed(3),
-    offsetDxMm: (dx * pxPerMm).toFixed(3),
-    offsetDyMm: (dy * pxPerMm).toFixed(3),
-    innerUnevenPx: innerUneven.toFixed(2),
-    outerUnevenPx: outerUneven.toFixed(2),
-    pxPerMm: pxPerMm.toFixed(3)
-  });
-
-  // Обновление DOM-элементов с результатами
-  const setMetric = (selector, value) => {
-    const el = document.querySelector(selector);
-    if (el) el.textContent = value;
-  };
-
-  setMetric('.metric-value.dorn', dornMm.toFixed(2));
-  setMetric('.metric-value.matrix', matrixMm.toFixed(2));
-  setMetric('.metric-value.offset', offsetMm.toFixed(2));
-  setMetric('.metric-value.offset-dx', (dx * pxPerMm).toFixed(2));
-  setMetric('.metric-value.offset-dy', (dy * pxPerMm).toFixed(2));
-
-  updateStatus('ok', 'Замер завершён.');
-}
-
-function resetApp() {
-  currentState = STATE.SEARCH;
-  goodFramesBuffer = [];
-  isMeasuring = false;
-  isRunning = false;
-
-  if (videoEl && videoEl.srcObject) {
-    videoEl.srcObject.getTracks().forEach(t => t.stop());
-    videoEl.srcObject = null;
-  }
-
-  if (overlayEl) {
-    const ctx = overlayEl.getContext('2d');
-    if (ctx) ctx.clearRect(0, 0, overlayEl.width, overlayEl.height);
-  }
-
-  document.querySelectorAll('.metric-value').forEach(el => el.textContent = '--');
-
-  if (frozenImgEl) frozenImgEl.style.display = 'none';
-  if (frozenOverlayEl) frozenOverlayEl.style.display = 'none';
-
-  updateStatus('ok', 'Сброшено. Нажмите "ЗАПУСТИТЬ КАМЕРУ" для нового замера.');
-}
-
-function drawCircle(ctx, x, y, r, color = 'blue', width = 2) {
-  ctx.beginPath();
-  ctx.arc(x, y, r, 0, Math.PI * 2);
-  ctx.strokeStyle = color;
-  ctx.lineWidth = width;
-  ctx.stroke();
-}
-
-document.addEventListener('DOMContentLoaded', () => {
-  const resetBtn = document.getElementById('resetBtn');
-  if (resetBtn) {
-    resetBtn.addEventListener('click', resetApp);
-  }
-});
