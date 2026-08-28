@@ -12,22 +12,12 @@ let currentState = STATE.SEARCH;
 
 let videoEl, canvasEl, overlayEl, frozenImgEl, frozenOverlayEl;
 
-const PARAMS = {
-  matrixDiam: 12.4, // Диаметр матрицы (внешний контур)
-  dornDiam: 9.3     // Диаметр дорна (внутренний контур)
-};
-
 const MIN_CIRCULARITY = 0.75;
 const MIN_AREA = 1500;
 const GOOD_FRAMES_NEEDED = 20;
-const SCORE_THRESHOLD = 0.7; // Минимальный балл кадра, чтобы считать его «хорошим»
+const SCORE_THRESHOLD = 0.7;
 
-// Буфер хороших кадров
 let goodFramesBuffer = [];
-let isMeasuring = false;
-
-// Флаг для одноразовой тестовой отрисовки (можно выключить, поставив false)
-let debugDrawDone = false;
 
 function onOpenCVLoad() {
   cvReady = true;
@@ -38,17 +28,19 @@ function onOpenCVLoad() {
 function updateStatus(type, text) {
   const dot = document.getElementById('statusDot');
   const txt = document.getElementById('statusText');
+  const txtPanel = document.getElementById('statusTextPanel');
   const progressFill = document.getElementById('statusProgress');
   const progressCount = document.getElementById('statusCount');
   const overlay = document.getElementById('statusOverlay');
 
-  if (!overlay) return;
-
   if (txt) txt.textContent = text;
+  if (txtPanel) txtPanel.textContent = text;
 
   if (dot) {
     dot.className = 'dot status-' + type;
   }
+
+  if (!overlay) return;
 
   if (currentState === STATE.SEARCH) {
     overlay.className = 'status-overlay state-search';
@@ -63,20 +55,29 @@ function updateStatus(type, text) {
   } else if (currentState === STATE.FROZEN) {
     overlay.className = 'status-overlay state-frozen';
     if (progressFill) progressFill.style.width = '100%';
-    if (progressCount) progressCount.textContent = '20+';
+    if (progressCount) progressCount.textContent = GOOD_FRAMES_NEEDED + '+';
   }
 }
 
 async function startCamera() {
-  if (document.getElementById('statusOverlay')) {
-    document.getElementById('statusOverlay').className = 'status-overlay state-search';
+  // Останавливаем предыдущий поток, если был
+  if (videoEl && videoEl.srcObject) {
+    videoEl.srcObject.getTracks().forEach(t => t.stop());
+    videoEl.srcObject = null;
   }
+
+  resetApp(false);
 
   videoEl = document.getElementById('video');
   if (!videoEl) {
     console.error('❌ Элемент #video не найден');
     updateStatus('err', 'Ошибка: нет элемента #video');
     return;
+  }
+
+  const overlay = document.getElementById('statusOverlay');
+  if (overlay) {
+    overlay.className = 'status-overlay state-search';
   }
 
   try {
@@ -110,7 +111,7 @@ function initElements() {
   frozenOverlayEl = document.getElementById('frozenOverlay');
 
   if (!overlayEl) {
-    console.error('❌ КРИТИЧЕСКАЯ ОШИБКА: Элемент <canvas id="overlay"> не найден в HTML!');
+    console.error('❌ Элемент <canvas id="overlay"> не найден!');
     updateStatus('err', 'Ошибка: нет элемента #overlay');
     isRunning = false;
     return;
@@ -132,11 +133,18 @@ function resizeCanvas() {
   }
   overlayEl.width = w;
   overlayEl.height = h;
+
+  // Подгоняем соотношение сторон контейнера под видео,
+  // чтобы object-fit: contain не оставлял чёрных полос
+  const videoArea = document.querySelector('.video-area');
+  if (videoArea) {
+    videoArea.style.aspectRatio = w + ' / ' + h;
+  }
 }
 
 function processFrame() {
   if (!isRunning || !videoEl || videoEl.paused || videoEl.ended) {
-    requestAnimationFrame(processFrame);
+    if (isRunning) requestAnimationFrame(processFrame);
     return;
   }
 
@@ -151,20 +159,6 @@ function processFrame() {
   }
 
   ctx.clearRect(0, 0, w, h);
-
-  // --- ТЕСТОВАЯ ОТРИСОВКА (можно отключить, поставив false вместо true) ---
-  if (true && !debugDrawDone) {
-    ctx.strokeStyle = 'red';
-    ctx.lineWidth = 4;
-    ctx.strokeRect(10, 10, w - 20, h - 20);
-
-    ctx.fillStyle = 'blue';
-    ctx.fillRect(w / 2 - 5, h / 2 - 5, 10, 10);
-
-    console.log('🟥🔵 Тестовые линии нарисованы. Если их не видно — проверьте z-index в CSS.');
-    debugDrawDone = true;
-  }
-  // -------------------------------------------------------------------------
 
   const srcMat = cv.imread(videoEl);
   if (!srcMat || srcMat.empty()) {
@@ -181,10 +175,7 @@ function processFrame() {
   try {
     cv.cvtColor(srcMat, grayMat, cv.COLOR_BGRA2GRAY);
     cv.GaussianBlur(grayMat, blurMat, new cv.Size(5, 5), 0);
-
-    // Canny для поиска границ
     cv.Canny(blurMat, edgesMat, 40, 120);
-
     cv.findContours(edgesMat, contours, hierarchy, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
 
     const candidates = [];
@@ -195,7 +186,6 @@ function processFrame() {
     for (let i = 0; i < contours.size(); i++) {
       const cnt = contours.get(i);
       const area = cv.contourArea(cnt);
-
       if (area < MIN_AREA) continue;
 
       const perimeter = cv.arcLength(cnt, true);
@@ -206,12 +196,10 @@ function processFrame() {
       if (cnt.total() < 5) continue;
 
       const ellipse = cv.fitEllipse(cnt);
-
       const distFromCenter = Math.hypot(
         ellipse.center.x - centerX,
         ellipse.center.y - centerY
       );
-
       if (distFromCenter > maxDistFromCenter) continue;
 
       candidates.push({
@@ -233,14 +221,11 @@ function processFrame() {
     if (candidates.length >= 2) {
       outer = candidates[0];
       inner = candidates[1];
-
-      // Внутренний должен быть заметно меньше внешнего
       if (inner.avgRadius > outer.avgRadius * 0.8) {
         inner = null;
       }
     }
 
-    // Отрисовка найденных контуров
     if (outer) {
       ctx.strokeStyle = '#00ff00';
       ctx.lineWidth = 2;
@@ -256,7 +241,6 @@ function processFrame() {
       ctx.stroke();
     }
 
-    // Логика накопления буфера
     if (inner && outer) {
       if (currentState !== STATE.LOCKED) {
         currentState = STATE.LOCKED;
@@ -265,44 +249,47 @@ function processFrame() {
       }
 
       const shapeScore = (inner.circularity + outer.circularity) / 2;
-
       const aspectPenalty =
-        Math.abs(inner.rx - inner.ry) / inner.rx +
-        Math.abs(outer.rx - outer.ry) / outer.rx;
+        Math.abs(inner.rx - inner.ry) / Math.max(inner.rx, 1) +
+        Math.abs(outer.rx - outer.ry) / Math.max(outer.rx, 1);
 
-      // ROI для контраста
-      const innerRect = new cv.Rect(
-        Math.max(0, inner.center.x - inner.rx),
-        Math.max(0, inner.center.y - inner.ry),
-        inner.rx * 2,
-        inner.ry * 2
-      );
-      const innerROI = grayMat.roi(innerRect);
-      const meanInner = cv.mean(innerROI);
-      const innerDarkness = meanInner.val ? meanInner.val[0] : 128;
+      // ROI для оценки контраста (с ограничением границ)
+      const ix1 = Math.max(0, Math.floor(inner.center.x - inner.rx));
+      const iy1 = Math.max(0, Math.floor(inner.center.y - inner.ry));
+      const ix2 = Math.min(w, Math.floor(inner.center.x + inner.rx));
+      const iy2 = Math.min(h, Math.floor(inner.center.y + inner.ry));
 
-      const outerRect = new cv.Rect(
-        Math.max(0, outer.center.x - outer.rx),
-        Math.max(0, outer.center.y - outer.ry),
-        outer.rx * 2,
-        outer.ry * 2
-      );
-      const outerROI = grayMat.roi(outerRect);
-      const meanOuter = cv.mean(outerROI);
-      const outerBrightness = meanOuter.val ? meanOuter.val[0] : 128;
+      let innerDarkness = 128;
+      if (ix2 > ix1 && iy2 > iy1) {
+        const innerROI = grayMat.roi(new cv.Rect(ix1, iy1, ix2 - ix1, iy2 - iy1));
+        const meanInner = cv.mean(innerROI);
+        innerDarkness = meanInner.val ? meanInner.val[0] : 128;
+        innerROI.delete();
+      }
+
+      const ox1 = Math.max(0, Math.floor(outer.center.x - outer.rx));
+      const oy1 = Math.max(0, Math.floor(outer.center.y - outer.ry));
+      const ox2 = Math.min(w, Math.floor(outer.center.x + outer.rx));
+      const oy2 = Math.min(h, Math.floor(outer.center.y + outer.ry));
+
+      let outerBrightness = 128;
+      if (ox2 > ox1 && oy2 > oy1) {
+        const outerROI = grayMat.roi(new cv.Rect(ox1, oy1, ox2 - ox1, oy2 - oy1));
+        const meanOuter = cv.mean(outerROI);
+        outerBrightness = meanOuter.val ? meanOuter.val[0] : 128;
+        outerROI.delete();
+      }
 
       const contrastScore = Math.abs(innerDarkness - outerBrightness) / 255.0;
-
       const score = shapeScore - aspectPenalty + contrastScore;
 
-      // Добавляем кадр только если он достаточно качественный
       if (score >= SCORE_THRESHOLD) {
         goodFramesBuffer.push({ inner, outer, score });
       }
 
       goodFramesBuffer.sort((a, b) => b.score - a.score);
-      if (goodFramesBuffer.length > 50) {
-        goodFramesBuffer = goodFramesBuffer.slice(0, 50);
+      if (goodFramesBuffer.length > GOOD_FRAMES_NEEDED * 2) {
+        goodFramesBuffer = goodFramesBuffer.slice(0, GOOD_FRAMES_NEEDED * 2);
       }
 
       if (goodFramesBuffer.length >= GOOD_FRAMES_NEEDED) {
@@ -326,11 +313,14 @@ function processFrame() {
     hierarchy.delete();
   }
 
-  requestAnimationFrame(processFrame);
+  if (isRunning && currentState !== STATE.FROZEN) {
+    requestAnimationFrame(processFrame);
+  }
 }
 
 function freezeResult(w, h) {
   currentState = STATE.FROZEN;
+  isRunning = false;
   updateStatus('ok', 'Измерение завершено!');
 
   if (goodFramesBuffer.length === 0) {
@@ -338,21 +328,82 @@ function freezeResult(w, h) {
     return;
   }
 
-  const best = goodFramesBuffer[0]; // лучший по score
+  const best = goodFramesBuffer[0];
 
-  // Диаметр по эллипсу: ellipse.size.width — это полный диаметр по X
-  const pxPerMmMatrix = PARAMS.matrixDiam / best.outer.fullWidth;
-  const pxPerMmDorn = PARAMS.dornDiam / best.inner.fullWidth;
-  const pxPerMm = (pxPerMmMatrix + pxPerMmDorn) / 2;
+  // Замораживаем кадр: копируем текущий кадр видео в frozenImg
+  if (videoEl && frozenImgEl) {
+    const tempCanvas = document.createElement('canvas');
+    tempCanvas.width = w;
+    tempCanvas.height = h;
+    const tempCtx = tempCanvas.getContext('2d');
+    tempCtx.drawImage(videoEl, 0, 0, w, h);
+    frozenImgEl.src = tempCanvas.toDataURL('image/jpeg', 0.92);
+    frozenImgEl.style.display = 'block';
+    videoEl.style.display = 'none';
+  }
 
-  const measuredMatrixDiam = best.outer.fullWidth * pxPerMm;
-  const measuredDornDiam = best.inner.fullWidth * pxPerMm;
+  // Показываем оверлей для финальной отрисовки
+  if (frozenOverlayEl) {
+    frozenOverlayEl.width = w;
+    frozenOverlayEl.height = h;
+    frozenOverlayEl.style.display = 'block';
+  }
 
-  console.log('Результаты измерения:');
-  console.log(`Матрица (эталон ${PARAMS.matrixDiam} мм): ${measuredMatrixDiam.toFixed(2)} мм`);
-  console.log(`Дорн (эталон ${PARAMS.dornDiam} мм): ${measuredDornDiam.toFixed(2)} мм`);
-  console.log(`Масштаб: 1 мм = ${pxPerMm.toFixed(3)} px`);
+  // Скрываем live-оверлей и перекрестие
+  if (overlayEl) overlayEl.style.display = 'none';
+  const crosshair = document.querySelector('.crosshair-fixed');
+  if (crosshair) crosshair.style.display = 'none';
 
-  // Здесь можно вызвать функцию для отображения результатов в UI
-  // showResults(measuredMatrixDiam, measuredDornDiam, pxPerMm);
+  // Вызываем расчёт метрик
+  if (typeof calculateOnFrozen === 'function') {
+    calculateOnFrozen(canvasEl, w, h, best.inner, best.outer);
+  } else {
+    console.error('❌ Функция calculateOnFrozen не найдена. Проверьте подключение result.js.');
+  }
+
+  // Останавливаем поток камеры
+  if (videoEl && videoEl.srcObject) {
+    videoEl.srcObject.getTracks().forEach(t => t.stop());
+    videoEl.srcObject = null;
+  }
+}
+
+function resetApp(stopCamera) {
+  if (stopCamera === undefined) stopCamera = true;
+
+  isRunning = false;
+  currentState = STATE.SEARCH;
+  goodFramesBuffer = [];
+
+  // Показываем видео, скрываем замороженный кадр
+  if (videoEl) videoEl.style.display = 'block';
+  if (overlayEl) overlayEl.style.display = 'block';
+  if (frozenImgEl) {
+    frozenImgEl.style.display = 'none';
+    frozenImgEl.src = '';
+  }
+  if (frozenOverlayEl) {
+    frozenOverlayEl.style.display = 'none';
+  }
+
+  // Показываем перекрестие
+  const crosshair = document.querySelector('.crosshair-fixed');
+  if (crosshair) crosshair.style.display = 'block';
+
+  // Сбрасываем метрики
+  const metricIds = [
+    'valGap', 'valNonUniform', 'valShift', 'valShiftX', 'valShiftY',
+    'valGapLeft', 'valGapRight', 'valGapTop', 'valGapBottom'
+  ];
+  metricIds.forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.textContent = '--';
+  });
+
+  if (stopCamera && videoEl && videoEl.srcObject) {
+    videoEl.srcObject.getTracks().forEach(t => t.stop());
+    videoEl.srcObject = null;
+  }
+
+  updateStatus('ok', 'Сброшено. Нажмите "ЗАПУСТИТЬ КАМЕРУ".');
 }
