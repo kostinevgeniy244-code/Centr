@@ -1,5 +1,3 @@
-// core.js — исправленная и стабилизированная версия
-
 let cvReady = false;
 let isRunning = false;
 
@@ -12,10 +10,11 @@ let currentState = STATE.SEARCH;
 
 let videoEl, canvasEl, overlayEl, frozenImgEl, frozenOverlayEl;
 
-const MIN_CIRCULARITY = 0.75;
-const MIN_AREA = 1500;
+// ПОПРАВЛЕНО: ослаблено под блики и мелкие кольца
+const MIN_AREA = 600;              // было 1500
+const MIN_CIRCULARITY = 0.65;      // было 0.75
 const GOOD_FRAMES_NEEDED = 20;
-const SCORE_THRESHOLD = 0.7;
+const SCORE_THRESHOLD = 0.6;       // было 0.7 — чуть снизили, чтобы кадры чаще проходили
 
 let goodFramesBuffer = [];
 
@@ -60,7 +59,6 @@ function updateStatus(type, text) {
 }
 
 async function startCamera() {
-  // Останавливаем предыдущий поток, если был
   if (videoEl && videoEl.srcObject) {
     videoEl.srcObject.getTracks().forEach(t => t.stop());
     videoEl.srcObject = null;
@@ -134,8 +132,6 @@ function resizeCanvas() {
   overlayEl.width = w;
   overlayEl.height = h;
 
-  // Подгоняем соотношение сторон контейнера под видео,
-  // чтобы object-fit: contain не оставлял чёрных полос
   const videoArea = document.querySelector('.video-area');
   if (videoArea) {
     videoArea.style.aspectRatio = w + ' / ' + h;
@@ -174,8 +170,10 @@ function processFrame() {
 
   try {
     cv.cvtColor(srcMat, grayMat, cv.COLOR_BGRA2GRAY);
-    cv.GaussianBlur(grayMat, blurMat, new cv.Size(5, 5), 0);
-    cv.Canny(blurMat, edgesMat, 40, 120);
+    // ПОПРАВЛЕНО: уменьшили размыв, чтобы не терять тонкие границы
+    cv.GaussianBlur(grayMat, blurMat, new cv.Size(3, 3), 0);
+    // ПОПРАВЛЕНО: подняли нижний порог Canny, чтобы отсечь шум от бликов
+    cv.Canny(blurMat, edgesMat, 60, 130);
     cv.findContours(edgesMat, contours, hierarchy, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
 
     const candidates = [];
@@ -219,9 +217,10 @@ function processFrame() {
     let inner = null;
 
     if (candidates.length >= 2) {
-      outer = candidates[0];
-      inner = candidates[1];
-      if (inner.avgRadius > outer.avgRadius * 0.8) {
+      outer = candidates;
+      inner = candidates;
+      // ПОПРАВЛЕНО: ослабили проверку соотношения радиусов (было 0.8 → 0.65)
+      if (inner.avgRadius > outer.avgRadius * 0.65) {
         inner = null;
       }
     }
@@ -253,7 +252,6 @@ function processFrame() {
         Math.abs(inner.rx - inner.ry) / Math.max(inner.rx, 1) +
         Math.abs(outer.rx - outer.ry) / Math.max(outer.rx, 1);
 
-      // ROI для оценки контраста (с ограничением границ)
       const ix1 = Math.max(0, Math.floor(inner.center.x - inner.rx));
       const iy1 = Math.max(0, Math.floor(inner.center.y - inner.ry));
       const ix2 = Math.min(w, Math.floor(inner.center.x + inner.rx));
@@ -263,7 +261,7 @@ function processFrame() {
       if (ix2 > ix1 && iy2 > iy1) {
         const innerROI = grayMat.roi(new cv.Rect(ix1, iy1, ix2 - ix1, iy2 - iy1));
         const meanInner = cv.mean(innerROI);
-        innerDarkness = meanInner.val ? meanInner.val[0] : 128;
+        innerDarkness = meanInner.val ? meanInner.val : 128;
         innerROI.delete();
       }
 
@@ -276,7 +274,7 @@ function processFrame() {
       if (ox2 > ox1 && oy2 > oy1) {
         const outerROI = grayMat.roi(new cv.Rect(ox1, oy1, ox2 - ox1, oy2 - oy1));
         const meanOuter = cv.mean(outerROI);
-        outerBrightness = meanOuter.val ? meanOuter.val[0] : 128;
+        outerBrightness = meanOuter.val ? meanOuter.val : 128;
         outerROI.delete();
       }
 
@@ -328,9 +326,8 @@ function freezeResult(w, h) {
     return;
   }
 
-  const best = goodFramesBuffer[0];
+  const best = goodFramesBuffer;
 
-  // Замораживаем кадр: копируем текущий кадр видео в frozenImg
   if (videoEl && frozenImgEl) {
     const tempCanvas = document.createElement('canvas');
     tempCanvas.width = w;
@@ -342,26 +339,22 @@ function freezeResult(w, h) {
     videoEl.style.display = 'none';
   }
 
-  // Показываем оверлей для финальной отрисовки
   if (frozenOverlayEl) {
     frozenOverlayEl.width = w;
     frozenOverlayEl.height = h;
     frozenOverlayEl.style.display = 'block';
   }
 
-  // Скрываем live-оверлей и перекрестие
   if (overlayEl) overlayEl.style.display = 'none';
   const crosshair = document.querySelector('.crosshair-fixed');
   if (crosshair) crosshair.style.display = 'none';
 
-  // Вызываем расчёт метрик
   if (typeof calculateOnFrozen === 'function') {
     calculateOnFrozen(canvasEl, w, h, best.inner, best.outer);
   } else {
     console.error('❌ Функция calculateOnFrozen не найдена. Проверьте подключение result.js.');
   }
 
-  // Останавливаем поток камеры
   if (videoEl && videoEl.srcObject) {
     videoEl.srcObject.getTracks().forEach(t => t.stop());
     videoEl.srcObject = null;
@@ -375,7 +368,6 @@ function resetApp(stopCamera) {
   currentState = STATE.SEARCH;
   goodFramesBuffer = [];
 
-  // Показываем видео, скрываем замороженный кадр
   if (videoEl) videoEl.style.display = 'block';
   if (overlayEl) overlayEl.style.display = 'block';
   if (frozenImgEl) {
@@ -386,11 +378,9 @@ function resetApp(stopCamera) {
     frozenOverlayEl.style.display = 'none';
   }
 
-  // Показываем перекрестие
   const crosshair = document.querySelector('.crosshair-fixed');
   if (crosshair) crosshair.style.display = 'block';
 
-  // Сбрасываем метрики
   const metricIds = [
     'valGap', 'valNonUniform', 'valShift', 'valShiftX', 'valShiftY',
     'valGapLeft', 'valGapRight', 'valGapTop', 'valGapBottom'
@@ -407,3 +397,5 @@ function resetApp(stopCamera) {
 
   updateStatus('ok', 'Сброшено. Нажмите "ЗАПУСТИТЬ КАМЕРУ".');
 }
+
+// КОНЕЦ ФАЙЛА
