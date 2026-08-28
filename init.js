@@ -1,7 +1,7 @@
 // init.js
 
 document.addEventListener('DOMContentLoaded', () => {
-  // Инициализация кнопки запуска камеры
+  // Кнопка запуска камеры
   const startBtn = document.getElementById('startBtn');
   if (startBtn) {
     startBtn.addEventListener('click', () => {
@@ -13,7 +13,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  // Инициализация кнопки сброса
+  // Кнопка сброса
   const resetBtn = document.getElementById('resetBtn');
   if (resetBtn) {
     resetBtn.addEventListener('click', () => {
@@ -25,18 +25,27 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  // Обработка загрузки OpenCV
-  if (typeof cv !== 'undefined' && typeof onOpenCVLoad === 'function') {
-    onOpenCVLoad();
+  // Ожидание загрузки OpenCV runtime
+  function initOpenCV() {
+    if (typeof cv === 'undefined') return;
+    if (cv.getBuildInformation) {
+      // Runtime уже готов
+      if (typeof onOpenCVLoad === 'function') onOpenCVLoad();
+    } else {
+      // Runtime ещё инициализируется
+      cv.onRuntimeInitialized = onOpenCVLoad;
+    }
+  }
+
+  if (typeof cv !== 'undefined') {
+    initOpenCV();
   } else {
-    // Если OpenCV ещё не загрузился — ждём события load у скрипта opencv.js
-    const opencvScript = Array.from(document.scripts).find(s => s.src && s.src.includes('opencv.js'));
+    // Скрипт OpenCV ещё не загрузился — ждём события load
+    const opencvScript = Array.from(document.scripts).find(
+      s => s.src && s.src.includes('opencv.js')
+    );
     if (opencvScript) {
-      opencvScript.addEventListener('load', () => {
-        if (typeof onOpenCVLoad === 'function') {
-          onOpenCVLoad();
-        }
-      });
+      opencvScript.addEventListener('load', initOpenCV);
     }
   }
 });
