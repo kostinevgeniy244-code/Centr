@@ -1,105 +1,51 @@
 <!DOCTYPE html>
 <html lang="ru">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Контроль зазора: Автозамер + Визуализация</title>
-  <link rel="stylesheet" href="style.css" />
-  <!-- OpenCV через CDN -->
-  <script src="https://docs.opencv.org/4.8.0/opencv.js"></script>
-</head>
-<body>
-  <div class="app-wrapper">
-    <h1>Контроль зазора</h1>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>OpenCV: Дорн/Матрица замер</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <div class="app">
+      <header class="header">
+        <h1>Замер дорна и матрицы</h1>
+        <div id="status" class="status">Ожидание камеры</div>
+      </header>
 
-    <!-- Видео область -->
-    <div class="video-area">
-      <canvas id="canvas" style="display:none;"></canvas>
-      <video id="video" playsinline muted></video>
-
-      <div id="statusOverlay" class="status-overlay">
-        <div class="status-text" id="statusText">Наведите камеру на деталь</div>
-        <div class="status-progress-bg">
-          <div class="status-progress-fill" id="statusProgress" style="width: 0%"></div>
-        </div>
-        <div class="status-hint">Стабильность: <span id="statusCount">0</span>/20 кадров</div>
+      <div class="controls">
+        <label>
+          Диаметр дорна (мм)
+          <input type="number" id="dornDiam" value="9.3" step="0.1" />
+        </label>
+        <label>
+          Диаметр матрицы (мм)
+          <input type="number" id="matrDiam" value="12.4" step="0.1" />
+        </label>
+        <button id="btnReset" class="btn">Перезапустить (смена оснастки)</button>
       </div>
 
-      <canvas id="overlay"></canvas>
-
-      <div class="crosshair-fixed"></div>
-
-      <img id="frozenImg" class="frozen-frame" />
-      <canvas id="frozenOverlay"></canvas>
-    </div>
-
-    <!-- Панель управления и результаты -->
-    <div class="controls-panel">
-      <div class="input-row">
-        <label for="dornDiam">Диаметр дорна, мм</label>
-        <input type="number" id="dornDiam" value="9.3" step="0.1" min="1" />
-      </div>
-      <div class="input-row">
-        <label for="matrDiam">Диаметр матрицы, мм</label>
-        <input type="number" id="matrDiam" value="12.4" step="0.1" min="1" />
+      <div class="view">
+        <video id="video" playsinline autoplay muted></video>
+        <canvas id="overlay"></canvas>
+        <canvas id="frozenOverlay" style="display:none"></canvas>
+        <img id="frozenImg" style="display:none" />
       </div>
 
-      <button id="startBtn">ЗАПУСТИТЬ КАМЕРУ</button>
-      <div class="status-bar">
-        <span class="dot" id="statusDot"></span>
-        <span id="statusTextPanel">Ожидание OpenCV...</span>
+      <div class="metrics">
+        <p>Смещение: <span id="metricShift">0.00</span> мм</p>
+        <p>Зазор: <span id="metricGap">0.00</span> мм</p>
+        <p>Кадры в буфере: <span id="metricCount">0</span>/20</p>
+      </div>
+
+      <div class="hint">
+        Держите телефон неподвижно. Расстояние ~20 см. Избегайте ярких бликов.
       </div>
     </div>
 
-    <div class="result-panel">
-      <h2>Результаты замера</h2>
-      <div class="metrics-grid">
-        <div class="metric-item metric-gap">
-          <span class="metric-value" id="valGap">--</span>
-          <span class="metric-label">Средний зазор</span>
-        </div>
-        <div class="metric-item metric-nonuniform">
-          <span class="metric-value" id="valNonUniform">--</span>
-          <span class="metric-label">Неравномерность</span>
-        </div>
-
-        <div class="metric-item metric-shift">
-          <span class="metric-value" id="valShift">--</span>
-          <span class="metric-label">Смещение (макс)</span>
-        </div>
-        <div class="metric-item">
-          <span class="metric-value" id="valShiftX">--</span>
-          <span class="metric-label">Смещение X</span>
-        </div>
-        <div class="metric-item">
-          <span class="metric-value" id="valShiftY">--</span>
-          <span class="metric-label">Смещение Y</span>
-        </div>
-
-        <div class="metric-item metric-left">
-          <span class="metric-value" id="valGapLeft">--</span>
-          <span class="metric-label">Зазор слева</span>
-        </div>
-        <div class="metric-item metric-right">
-          <span class="metric-value" id="valGapRight">--</span>
-          <span class="metric-label">Зазор справа</span>
-        </div>
-        <div class="metric-item metric-top">
-          <span class="metric-value" id="valGapTop">--</span>
-          <span class="metric-label">Зазор сверху</span>
-        </div>
-        <div class="metric-item metric-bottom">
-          <span class="metric-value" id="valGapBottom">--</span>
-          <span class="metric-label">Зазор снизу</span>
-        </div>
-      </div>
-
-      <button id="resetBtn">СБРОС</button>
-    </div>
-  </div>
-
-  <script src="core.js"></script>
-  <script src="result.js"></script>
-  <script src="init.js"></script>
-</body>
+    <script src="https://docs.opencv.org/4.8.0/opencv.js"></script>
+    <script src="core.js"></script>
+    <script src="result.js"></script>
+  </body>
 </html>
+<!-- конец файла -->
