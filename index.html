@@ -10,44 +10,29 @@
     <div class="app">
       <header class="header">
         <h1>Замер дорна и матрицы</h1>
-        <div id="status" class="status">Ожидание камеры</div>
       </header>
 
       <div class="controls">
-        <label>
-          Диаметр дорна (мм)
-          <input type="number" id="dornDiam" value="9.3" step="0.1" />
-        </label>
-        <label>
-          Диаметр матрицы (мм)
-          <input type="number" id="matrDiam" value="12.4" step="0.1" />
-        </label>
-        <button id="btnReset" class="btn btn-primary">Перезапустить (смена оснастки)</button>
-        <button id="btnFreeze" class="btn btn-secondary">Заморозить кадр</button>
-        <button id="btnUnfreeze" class="btn btn-secondary" style="display:none">Продолжить</button>
+        <button id="startBtn">Запустить камеру</button>
+        <button id="freezeBtn" disabled>Заморозить кадр</button>
+        <button id="unfreezeBtn" disabled style="display: none;">Продолжить</button>
       </div>
 
       <div class="view">
-        <video id="video" playsinline autoplay muted></video>
-        <canvas id="overlay"></canvas>
-        <canvas id="frozenOverlay" style="display:none"></canvas>
-        <img id="frozenImg" style="display:none" />
+        <video id="videoEl" playsinline autoplay muted></video>
+        <canvas id="overlayEl"></canvas>
+        
+        <div id="frozenContainer" class="frozen-container" style="display: none;">
+          <img id="frozenImgEl" class="frozen-img" />
+          <canvas id="frozenOverlayEl" class="frozen-overlay"></canvas>
+        </div>
       </div>
 
-      <div class="metrics">
-        <p>Смещение: <span id="metricShift">0.00</span> мм</p>
-        <p>Зазор: <span id="metricGap">0.00</span> мм</p>
-        <p>Кадры в буфере: <span id="metricCount">0</span>/20</p>
-      </div>
-
-      <div class="hint">
-        Держите телефон неподвижно. Расстояние ~20 см. Избегайте ярких бликов.
-      </div>
+      <div id="resultInfo" class="result-info"></div>
     </div>
 
-    <script src="https://docs.opencv.org/4.8.0/opencv.js"></script>
-    <script src="core.js"></script>
-    <script src="result.js"></script>
+    <script src="core.js" defer></script>
+    <script src="result.js" defer></script>
   </body>
 </html>
 <!-- конец файла -->
