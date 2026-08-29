@@ -2,6 +2,7 @@
   --bg: #f3f5f7;
   --surface: #ffffff;
   --primary: #2563eb;
+  --secondary: #64748b;
   --success: #16a34a;
   --warning: #f59e0b;
   --danger: #dc2626;
@@ -62,17 +63,30 @@ input[type="number"] {
   box-sizing: border-box;
 }
 
-#btnReset {
-  grid-column: 1 / -1;
+.btn {
   padding: 10px;
-  background: var(--primary);
-  color: white;
   border: none;
   border-radius: 6px;
   cursor: pointer;
   font-weight: 600;
 }
+#btnReset {
+  grid-column: 1 / -1;
+  background: var(--primary);
+  color: white;
+}
 #btnReset:hover { background: #1d4ed8; }
+
+#btnFreeze, #btnUnfreeze {
+  grid-column: 1 / -1;
+  background: transparent;
+  border: 1px solid var(--secondary);
+  color: var(--secondary);
+}
+#btnFreeze:hover, #btnUnfreeze:hover {
+  border-color: var(--primary);
+  color: var(--primary);
+}
 
 .view {
   position: relative;
