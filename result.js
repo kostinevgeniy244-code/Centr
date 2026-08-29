@@ -1,100 +1,72 @@
-/**
- * result.js — финальные расчёты и логика «заморозки» кадра
- * Подключается после core.js в index.html
- */
+// result.js — логика заморозки и отрисовки (уже учтена в core.js выше, но это отдельный файл, если ты делишь по функционалу)
+// Если ты используешь core.js как единый JS — этот файл не нужен. Если раздельно — вот он.
 
 function freezeResult() {
-  if (!isRunning) return;
+  if (!videoEl || !videoEl.videoWidth || !videoEl.videoHeight) {
+    console.warn('Размеры видео ещё не определены');
+    return;
+  }
+
+  isRunning = false;
   currentState = STATE.FROZEN;
 
-  const video = document.getElementById('video');
-  const frozenImg = document.getElementById('frozenImg');
-  const frozenOverlay = document.getElementById('frozenOverlay');
-  const overlay = document.getElementById('overlay');
-  const btnFreeze = document.getElementById('btnFreeze');
-  const btnUnfreeze = document.getElementById('btnUnfreeze');
+  const freezeBtn = document.getElementById('freezeBtn');
+  const unfreezeBtn = document.getElementById('unfreezeBtn');
 
-  // Сохраняем текущий кадр из видео
-  const canvas = document.createElement('canvas');
-  canvas.width = video.videoWidth;
-  canvas.height = video.videoHeight;
-  const ctx = canvas.getContext('2d');
-  ctx.drawImage(video, 0, 0);
+  freezeBtn.disabled = true;
+  unfreezeBtn.style.display = 'inline-block';
 
-  frozenImg.src = canvas.toDataURL('image/jpeg', 0.9);
-  frozenImg.style.display = 'block';
-  frozenImg.width = canvas.width;
-  frozenImg.height = canvas.height;
+  frozenContainerEl = document.querySelector('.frozen-container');
+  frozenImgEl = document.getElementById('frozenImgEl');
+  frozenOverlayEl = document.getElementById('frozenOverlayEl');
 
-  // Клонируем overlay (линии/эллипсы) на отдельный канвас
-  const clone = overlay.cloneNode(false);
-  clone.width = overlay.width;
-  clone.height = overlay.height;
-  const cloneCtx = clone.getContext('2d');
-  cloneCtx.drawImage(overlay, 0, 0);
+  frozenContainerEl.style.display = 'block';
 
-  frozenOverlay.width = clone.width;
-  frozenOverlay.height = clone.height;
-  const frozenCtx = frozenOverlay.getContext('2d');
-  frozenCtx.drawImage(clone, 0, 0);
-  frozenOverlay.style.display = 'block';
+  // Берём кадр строго из видеоэлемента — это тот кадр, что был на экране
+  const imgData = videoEl.toDataURL();
+  frozenImgEl.src = imgData;
 
-  // Скрываем живой поток и рабочий оверлей
-  video.style.display = 'none';
-  overlay.style.display = 'none';
+  // Синхронизируем размер канваса с реальным размером кадра
+  frozenOverlayEl.width = videoEl.videoWidth;
+  frozenOverlayEl.height = videoEl.videoHeight;
 
-  updateStatus('success', 'Результат зафиксирован');
-
-  // Переключаем кнопки
-  if (btnFreeze) btnFreeze.style.display = 'none';
-  if (btnUnfreeze) btnUnfreeze.style.display = 'block';
+  drawDebug(frozenOverlayEl, videoEl.videoWidth, videoEl.videoHeight);
 }
 
 function unfreezeResult() {
+  isRunning = true;
   currentState = STATE.SEARCH;
 
-  const video = document.getElementById('video');
-  const frozenImg = document.getElementById('frozenImg');
-  const frozenOverlay = document.getElementById('frozenOverlay');
-  const overlay = document.getElementById('overlay');
-  const btnFreeze = document.getElementById('btnFreeze');
-  const btnUnfreeze = document.getElementById('btnUnfreeze');
+  const freezeBtn = document.getElementById('freezeBtn');
+  const unfreezeBtn = document.getElementById('unfreezeBtn');
 
-  // Возвращаем живой поток и очищаем замороженный вид
-  video.style.display = 'block';
-  overlay.style.display = 'block';
-  frozenImg.style.display = 'none';
-  frozenOverlay.style.display = 'none';
+  freezeBtn.disabled = false;
+  unfreezeBtn.style.display = 'none';
 
-  updateStatus('ok', 'Камера активна. Наведите на деталь.');
+  frozenContainerEl.style.display = 'none';
 
-  // Сбрасываем буфер кадров, чтобы не тянуть старые данные
-  goodFramesBuffer = [];
-  lastScore = 0;
-
-  // Переключаем кнопки обратно
-  if (btnFreeze) btnFreeze.style.display = 'block';
-  if (btnUnfreeze) btnUnfreeze.style.display = 'none';
-
-  // Продолжаем обработку кадров
-  processFrame();
+  processVideo();
 }
 
-// Привязываем кнопки к функциям при загрузке DOM
-document.addEventListener('DOMContentLoaded', () => {
-  const btnFreeze = document.getElementById('btnFreeze');
-  const btnUnfreeze = document.getElementById('btnUnfreeze');
+// Отрисовка поверх кадра (для поиска и для замороженного)
+function drawDebug(canvas, w, h) {
+  const ctx = canvas.getContext('2d');
+  ctx.clearRect(0, 0, w, h);
 
-  if (btnFreeze) {
-    btnFreeze.addEventListener('click', freezeResult);
+  ctx.strokeStyle = 'lime';
+  ctx.lineWidth = 2;
+  ctx.setLineDash([5, 5]);
+  ctx.beginPath();
+  ctx.rect(w * 0.1, h * 0.1, w * 0.8, h * 0.8);
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  ctx.fillStyle = 'red';
+  ctx.font = '16px Arial';
+  if (currentState === STATE.FROZEN) {
+    ctx.fillText('Кадр заморожен', 10, 25);
+  } else {
+    ctx.fillText('Режим поиска', 10, 25);
   }
-
-  if (btnUnfreeze) {
-    btnUnfreeze.addEventListener('click', unfreezeResult);
-  }
-});
-
-// Экспортируем функции, если понадобится вызывать их из других модулей
-window.freezeResult = freezeResult;
-window.unfreezeResult = unfreezeResult;
-// конец файла
+}
+<!-- конец файла -->
