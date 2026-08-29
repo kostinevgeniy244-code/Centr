@@ -10,132 +10,99 @@ let currentState = STATE.SEARCH;
 
 let videoEl, canvasEl, overlayEl, frozenImgEl, frozenOverlayEl;
 
-// ПОПРАВЛЕНО: ослаблено под блики и мелкие кольца
-const MIN_AREA = 600;              // было 1500
-const MIN_CIRCULARITY = 0.65;      // было 0.75
-const GOOD_FRAMES_NEEDED = 20;
-const SCORE_THRESHOLD = 0.6;       // было 0.7 — чуть снизили, чтобы кадры чаще проходили
+// Фиксированное рабочее разрешение для OpenCV (быстрее и стабильнее на мобильном)
+const PROCESS_WIDTH = 320;
+const PROCESS_HEIGHT = 240;
 
+// Исходные размеры потока (зафиксируем один раз при старте)
+let srcW = 0, srcH = 0;
+
+const PARAMS = {
+  matrixDiam: 12.4,
+  dornDiam: 9.3,
+  GOOD_FRAMES_NEEDED: 20,
+  SCORE_THRESHOLD: 0.6,
+  MIN_CIRCULARITY: 0.6
+};
+
+// Глобальные переменные для накопления кадров
 let goodFramesBuffer = [];
+let lastScore = 0;
 
-function onOpenCVLoad() {
-  cvReady = true;
-  console.log('✅ OpenCV загружен');
-  updateStatus('ok', 'OpenCV готов. Нажмите "ЗАПУСТИТЬ КАМЕРУ".');
+function initElements() {
+  videoEl = document.getElementById('video');
+  canvasEl = document.getElementById('overlay');
+  overlayEl = document.getElementById('overlay');
+  frozenImgEl = document.getElementById('frozenImg');
+  frozenOverlayEl = document.getElementById('frozenOverlay');
+
+  resizeCanvas();
 }
 
-function updateStatus(type, text) {
-  const dot = document.getElementById('statusDot');
-  const txt = document.getElementById('statusText');
-  const txtPanel = document.getElementById('statusTextPanel');
-  const progressFill = document.getElementById('statusProgress');
-  const progressCount = document.getElementById('statusCount');
-  const overlay = document.getElementById('statusOverlay');
+function resizeCanvas() {
+  if (!videoEl || !overlayEl || videoEl.videoWidth === 0) return;
 
-  if (txt) txt.textContent = text;
-  if (txtPanel) txtPanel.textContent = text;
+  srcW = videoEl.videoWidth;
+  srcH = videoEl.videoHeight;
 
-  if (dot) {
-    dot.className = 'dot status-' + type;
-  }
-
-  if (!overlay) return;
-
-  if (currentState === STATE.SEARCH) {
-    overlay.className = 'status-overlay state-search';
-    if (progressFill) progressFill.style.width = '0%';
-    if (progressCount) progressCount.textContent = '0';
-  } else if (currentState === STATE.LOCKED) {
-    overlay.className = 'status-overlay state-locked';
-    const collected = goodFramesBuffer.length;
-    const percent = Math.min((collected / GOOD_FRAMES_NEEDED) * 100, 100);
-    if (progressFill) progressFill.style.width = percent + '%';
-    if (progressCount) progressCount.textContent = collected;
-  } else if (currentState === STATE.FROZEN) {
-    overlay.className = 'status-overlay state-frozen';
-    if (progressFill) progressFill.style.width = '100%';
-    if (progressCount) progressCount.textContent = GOOD_FRAMES_NEEDED + '+';
-  }
+  overlayEl.width = srcW;
+  overlayEl.height = srcH;
 }
 
 async function startCamera() {
-  if (videoEl && videoEl.srcObject) {
-    videoEl.srcObject.getTracks().forEach(t => t.stop());
-    videoEl.srcObject = null;
-  }
-
-  resetApp(false);
-
-  videoEl = document.getElementById('video');
-  if (!videoEl) {
-    console.error('❌ Элемент #video не найден');
-    updateStatus('err', 'Ошибка: нет элемента #video');
-    return;
-  }
-
-  const overlay = document.getElementById('statusOverlay');
-  if (overlay) {
-    overlay.className = 'status-overlay state-search';
-  }
+  // Сброс состояния при перезапуске (смена оснастки)
+  goodFramesBuffer = [];
+  lastScore = 0;
+  currentState = STATE.SEARCH;
+  isRunning = true;
 
   try {
     const stream = await navigator.mediaDevices.getUserMedia({
-      video: { width: { ideal: 640 }, height: { ideal: 480 }, facingMode: 'environment' },
+      video: {
+        width: { ideal: 640 },
+        height: { ideal: 480 },
+        facingMode: 'environment' // тыловая камера по умолчанию
+      },
       audio: false
     });
 
     videoEl.srcObject = stream;
     videoEl.onloadedmetadata = () => {
+      // Один раз фиксируем реальные размеры потока
+      srcW = videoEl.videoWidth;
+      srcH = videoEl.videoHeight;
+      console.log('Исходный поток:', srcW, 'x', srcH);
+
+      resizeCanvas(); // подгоняем canvas под реальные размеры
       videoEl.play();
       updateStatus('ok', 'Камера активна. Наведите на деталь.');
-      initElements();
-      isRunning = true;
       processFrame();
     };
   } catch (err) {
-    console.error('❌ Ошибка камеры:', err);
-    let msg = 'Ошибка камеры!';
-    if (err.name === 'NotAllowedError') msg = 'Доступ к камере запрещён.';
-    if (err.name === 'NotFoundError') msg = 'Камера не найдена.';
-    updateStatus('err', msg);
-    alert(msg);
-  }
-}
-
-function initElements() {
-  canvasEl = document.getElementById('canvas');
-  overlayEl = document.getElementById('overlay');
-  frozenImgEl = document.getElementById('frozenImg');
-  frozenOverlayEl = document.getElementById('frozenOverlay');
-
-  if (!overlayEl) {
-    console.error('❌ Элемент <canvas id="overlay"> не найден!');
-    updateStatus('err', 'Ошибка: нет элемента #overlay');
+    console.error(err);
+    updateStatus('err', 'Ошибка доступа к камере');
     isRunning = false;
-    return;
   }
-
-  resizeCanvas();
-  window.addEventListener('resize', resizeCanvas);
 }
 
-function resizeCanvas() {
-  if (!videoEl || !overlayEl) return;
-  const w = videoEl.videoWidth;
-  const h = videoEl.videoHeight;
-  if (w === 0 || h === 0) return;
+function updateStatus(type, text) {
+  const el = document.getElementById('status');
+  el.className = 'status ' + type;
+  el.textContent = text;
+}
 
-  if (canvasEl) {
-    canvasEl.width = w;
-    canvasEl.height = h;
-  }
-  overlayEl.width = w;
-  overlayEl.height = h;
+// Динамический порог площади в зависимости от ожидаемого размера кольца
+function getMinAreaForDiameter(diameterMm) {
+  // Оценка масштаба: ~0.056 мм/пиксель для типичного Android на 20 см
+  const mmPerPixel = 0.056;
+  const diameterPx = diameterMm / mmPerPixel;
+  const radiusPx = diameterPx / 2;
 
-  const videoArea = document.querySelector('.video-area');
-  if (videoArea) {
-    videoArea.style.aspectRatio = w + ' / ' + h;
-  }
+  // Площадь круга ≈ π * r^2
+  const expectedArea = Math.PI * radiusPx * radiusPx;
+
+  // Для маленьких колец ослабляем порог, но не ниже разумного минимума
+  return Math.max(250, expectedArea * 0.4);
 }
 
 function processFrame() {
@@ -149,6 +116,7 @@ function processFrame() {
   const w = overlayEl.width;
   const h = overlayEl.height;
   const ctx = overlayEl.getContext('2d');
+
   if (!ctx) {
     requestAnimationFrame(processFrame);
     return;
@@ -162,240 +130,225 @@ function processFrame() {
     return;
   }
 
+  // Ресайз до рабочего размера для OpenCV
+  const smallSrc = new cv.Mat();
+  cv.resize(srcMat, smallSrc, new cv.Size(PROCESS_WIDTH, PROCESS_HEIGHT));
+
   const grayMat = new cv.Mat();
   const blurMat = new cv.Mat();
   const edgesMat = new cv.Mat();
   const contours = new cv.MatVector();
   const hierarchy = new cv.Mat();
 
-  try {
-    cv.cvtColor(srcMat, grayMat, cv.COLOR_BGRA2GRAY);
-    // ПОПРАВЛЕНО: уменьшили размыв, чтобы не терять тонкие границы
-    cv.GaussianBlur(grayMat, blurMat, new cv.Size(3, 3), 0);
-    // ПОПРАВЛЕНО: подняли нижний порог Canny, чтобы отсечь шум от бликов
-    cv.Canny(blurMat, edgesMat, 60, 130);
-    cv.findContours(edgesMat, contours, hierarchy, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
+  cv.cvtColor(smallSrc, grayMat, cv.COLOR_BGRA2GRAY);
+  cv.GaussianBlur(grayMat, blurMat, new cv.Size(3, 3), 0);
 
-    const candidates = [];
-    const centerX = w / 2;
-    const centerY = h / 2;
-    const maxDistFromCenter = Math.min(w, h) * 0.35;
+  // Морфология: закрываем мелкие разрывы от бликов
+  const kernel = cv.getStructuringElement(cv.MORPH_ELLIPSE, new cv.Size(3, 3));
+  cv.morphologyEx(blurMat, blurMat, cv.MORPH_CLOSE, kernel);
 
-    for (let i = 0; i < contours.size(); i++) {
-      const cnt = contours.get(i);
-      const area = cv.contourArea(cnt);
-      if (area < MIN_AREA) continue;
+  cv.Canny(blurMat, edgesMat, 60, 130);
+  cv.findContours(edgesMat, contours, hierarchy, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
 
-      const perimeter = cv.arcLength(cnt, true);
-      if (perimeter === 0) continue;
+  // Коэффициенты масштабирования для отрисовки обратно на полный canvas
+  const scaleX = w / PROCESS_WIDTH;
+  const scaleY = h / PROCESS_HEIGHT;
 
-      const circularity = (4 * Math.PI * area) / (perimeter * perimeter);
-      if (circularity < MIN_CIRCULARITY) continue;
-      if (cnt.total() < 5) continue;
+  // Получаем введённые размеры оснастки
+  const dornDiamVal = parseFloat(document.getElementById('dornDiam').value) || PARAMS.dornDiam;
+  const matrDiamVal = parseFloat(document.getElementById('matrDiam').value) || PARAMS.matrixDiam;
 
-      const ellipse = cv.fitEllipse(cnt);
-      const distFromCenter = Math.hypot(
-        ellipse.center.x - centerX,
-        ellipse.center.y - centerY
-      );
-      if (distFromCenter > maxDistFromCenter) continue;
+  const minAreaInner = getMinAreaForDiameter(dornDiamVal);
+  const minAreaOuter = getMinAreaForDiameter(matrDiamVal);
 
-      candidates.push({
-        center: { x: ellipse.center.x, y: ellipse.center.y },
-        rx: ellipse.size.width / 2,
-        ry: ellipse.size.height / 2,
-        circularity,
-        avgRadius: (ellipse.size.width + ellipse.size.height) / 4,
-        fullWidth: ellipse.size.width,
-        fullHeight: ellipse.size.height
-      });
+  let candidates = [];
+
+  for (let i = 0; i < contours.size(); i++) {
+    const cnt = contours.get(i);
+    const area = cv.contourArea(cnt);
+
+    // Пропускаем слишком маленькие контуры
+    if (area < Math.min(minAreaInner, minAreaOuter)) continue;
+
+    const ellipse = cv.fitEllipse(cnt);
+    const center = ellipse.center;
+    const rx = ellipse.size.width / 2;
+    const ry = ellipse.size.height / 2;
+
+    // Оценка «круглости»
+    const perimeter = cv.arcLength(cnt, true);
+    let circularity = 0;
+    if (perimeter > 0 && area > 0) {
+      circularity = (4 * Math.PI * area) / (perimeter * perimeter);
     }
 
-    candidates.sort((a, b) => b.avgRadius - a.avgRadius);
+    if (circularity < PARAMS.MIN_CIRCULARITY) continue;
 
-    let outer = null;
-    let inner = null;
-
-    if (candidates.length >= 2) {
-      outer = candidates;
-      inner = candidates;
-      // ПОПРАВЛЕНО: ослабили проверку соотношения радиусов (было 0.8 → 0.65)
-      if (inner.avgRadius > outer.avgRadius * 0.65) {
-        inner = null;
-      }
-    }
-
-    if (outer) {
-      ctx.strokeStyle = '#00ff00';
-      ctx.lineWidth = 2;
-      ctx.beginPath();
-      ctx.ellipse(outer.center.x, outer.center.y, outer.rx, outer.ry, 0, 0, Math.PI * 2);
-      ctx.stroke();
-    }
-    if (inner) {
-      ctx.strokeStyle = '#ff00ff';
-      ctx.lineWidth = 2;
-      ctx.beginPath();
-      ctx.ellipse(inner.center.x, inner.center.y, inner.rx, inner.ry, 0, 0, Math.PI * 2);
-      ctx.stroke();
-    }
-
-    if (inner && outer) {
-      if (currentState !== STATE.LOCKED) {
-        currentState = STATE.LOCKED;
-        updateStatus('ok', 'Деталь найдена. Накопление кадров...');
-        goodFramesBuffer = [];
-      }
-
-      const shapeScore = (inner.circularity + outer.circularity) / 2;
-      const aspectPenalty =
-        Math.abs(inner.rx - inner.ry) / Math.max(inner.rx, 1) +
-        Math.abs(outer.rx - outer.ry) / Math.max(outer.rx, 1);
-
-      const ix1 = Math.max(0, Math.floor(inner.center.x - inner.rx));
-      const iy1 = Math.max(0, Math.floor(inner.center.y - inner.ry));
-      const ix2 = Math.min(w, Math.floor(inner.center.x + inner.rx));
-      const iy2 = Math.min(h, Math.floor(inner.center.y + inner.ry));
-
-      let innerDarkness = 128;
-      if (ix2 > ix1 && iy2 > iy1) {
-        const innerROI = grayMat.roi(new cv.Rect(ix1, iy1, ix2 - ix1, iy2 - iy1));
-        const meanInner = cv.mean(innerROI);
-        innerDarkness = meanInner.val ? meanInner.val : 128;
-        innerROI.delete();
-      }
-
-      const ox1 = Math.max(0, Math.floor(outer.center.x - outer.rx));
-      const oy1 = Math.max(0, Math.floor(outer.center.y - outer.ry));
-      const ox2 = Math.min(w, Math.floor(outer.center.x + outer.rx));
-      const oy2 = Math.min(h, Math.floor(outer.center.y + outer.ry));
-
-      let outerBrightness = 128;
-      if (ox2 > ox1 && oy2 > oy1) {
-        const outerROI = grayMat.roi(new cv.Rect(ox1, oy1, ox2 - ox1, oy2 - oy1));
-        const meanOuter = cv.mean(outerROI);
-        outerBrightness = meanOuter.val ? meanOuter.val : 128;
-        outerROI.delete();
-      }
-
-      const contrastScore = Math.abs(innerDarkness - outerBrightness) / 255.0;
-      const score = shapeScore - aspectPenalty + contrastScore;
-
-      if (score >= SCORE_THRESHOLD) {
-        goodFramesBuffer.push({ inner, outer, score });
-      }
-
-      goodFramesBuffer.sort((a, b) => b.score - a.score);
-      if (goodFramesBuffer.length > GOOD_FRAMES_NEEDED * 2) {
-        goodFramesBuffer = goodFramesBuffer.slice(0, GOOD_FRAMES_NEEDED * 2);
-      }
-
-      if (goodFramesBuffer.length >= GOOD_FRAMES_NEEDED) {
-        freezeResult(w, h);
-      }
-    } else {
-      if (currentState === STATE.LOCKED) {
-        currentState = STATE.SEARCH;
-        updateStatus('warn', 'Деталь потеряна. Наведите камеру.');
-        goodFramesBuffer = [];
-      }
-    }
-  } catch (err) {
-    console.error('❌ Ошибка обработки кадра:', err);
-  } finally {
-    srcMat.delete();
-    grayMat.delete();
-    blurMat.delete();
-    edgesMat.delete();
-    contours.delete();
-    hierarchy.delete();
+    candidates.push({
+      center, rx, ry, area, circularity,
+      // Масштабируем координаты для отрисовки
+      realX: center.x * scaleX,
+      realY: center.y * scaleY,
+      realRx: rx * scaleX,
+      realRy: ry * scaleY
+    });
   }
+
+  contours.delete();
+  hierarchy.delete();
+
+  // Ищем пару «внутреннее + внешнее»
+  let innerCandidate = null;
+  let outerCandidate = null;
+
+  // Простая эвристика: сортируем по площади, ищем вложенность
+  candidates.sort((a, b) => b.area - a.area);
+
+  for (const c of candidates) {
+    // Если ещё нет внешнего — это кандидат на внешнее
+    if (!outerCandidate) {
+      outerCandidate = c;
+      continue;
+    }
+    // Проверяем, находится ли центр текущего внутри внешнего (по bounding box)
+    const inside =
+      c.center.x > outerCandidate.center.x - outerCandidate.rx * 0.8 &&
+      c.center.x < outerCandidate.center.x + outerCandidate.rx * 0.8 &&
+      c.center.y > outerCandidate.center.y - outerCandidate.ry * 0.8 &&
+      c.center.y < outerCandidate.center.y + outerCandidate.ry * 0.8;
+
+    if (inside) {
+      innerCandidate = c;
+      break;
+    }
+  }
+
+  // Отрисовка эллипсов
+  if (outerCandidate) {
+    ctx.strokeStyle = '#16a34a';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.ellipse(outerCandidate.realX, outerCandidate.realY, outerCandidate.realRx, outerCandidate.realRy, 0, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+  if (innerCandidate) {
+    ctx.strokeStyle = '#dc2626';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.ellipse(innerCandidate.realX, innerCandidate.realY, innerCandidate.realRx, innerCandidate.realRy, 0, 0, Math.PI * 2);
+    ctx.stroke();
+
+    // Вектор смещения
+    ctx.strokeStyle = '#f59e0b';
+    ctx.setLineDash([5, 5]);
+    ctx.beginPath();
+    ctx.moveTo(outerCandidate.realX, outerCandidate.realY);
+    ctx.lineTo(innerCandidate.realX, innerCandidate.realY);
+    ctx.stroke();
+    ctx.setLineDash([]);
+  }
+
+  // Накопление хороших кадров
+  if (innerCandidate && outerCandidate) {
+    const dx = innerCandidate.center.x - outerCandidate.center.x;
+    const dy = innerCandidate.center.y - outerCandidate.center.y;
+    const distPx = Math.sqrt(dx * dx + dy * dy);
+
+    // Оценка качества пары (простая метрика)
+    const score = 1 - (distPx / Math.max(outerCandidate.rx, outerCandidate.ry, 1));
+    lastScore = score;
+
+    if (score >= PARAMS.SCORE_THRESHOLD) {
+      goodFramesBuffer.push({ inner: innerCandidate, outer: outerCandidate, score });
+      if (goodFramesBuffer.length > PARAMS.GOOD_FRAMES_NEEDED) {
+        goodFramesBuffer.shift();
+      }
+    }
+  } else {
+    lastScore = 0;
+  }
+
+  // Обновляем метрики в UI
+  updateMetricsUI();
+
+  srcMat.delete();
+  smallSrc.delete();
+  grayMat.delete();
+  blurMat.delete();
+  edgesMat.delete();
 
   if (isRunning && currentState !== STATE.FROZEN) {
     requestAnimationFrame(processFrame);
   }
 }
 
-function freezeResult(w, h) {
-  currentState = STATE.FROZEN;
-  isRunning = false;
-  updateStatus('ok', 'Измерение завершено!');
+function updateMetricsUI() {
+  const countEl = document.getElementById('metricCount');
+  if (countEl) countEl.textContent = goodFramesBuffer.length;
 
-  if (goodFramesBuffer.length === 0) {
-    updateStatus('err', 'Не удалось накопить хорошие кадры');
+  if (goodFramesBuffer.length < 2) {
+    document.getElementById('metricShift').textContent = '0.00';
+    document.getElementById('metricGap').textContent = '0.00';
     return;
   }
 
-  const best = goodFramesBuffer;
+  // Усредняем центры по буферу
+  let sumInnerX = 0, sumInnerY = 0;
+  let sumOuterX = 0, sumOuterY = 0;
 
-  if (videoEl && frozenImgEl) {
-    const tempCanvas = document.createElement('canvas');
-    tempCanvas.width = w;
-    tempCanvas.height = h;
-    const tempCtx = tempCanvas.getContext('2d');
-    tempCtx.drawImage(videoEl, 0, 0, w, h);
-    frozenImgEl.src = tempCanvas.toDataURL('image/jpeg', 0.92);
-    frozenImgEl.style.display = 'block';
-    videoEl.style.display = 'none';
+  for (const f of goodFramesBuffer) {
+    sumInnerX += f.inner.center.x;
+    sumInnerY += f.inner.center.y;
+    sumOuterX += f.outer.center.x;
+    sumOuterY += f.outer.center.y;
   }
 
-  if (frozenOverlayEl) {
-    frozenOverlayEl.width = w;
-    frozenOverlayEl.height = h;
-    frozenOverlayEl.style.display = 'block';
-  }
+  const avgInnerX = sumInnerX / goodFramesBuffer.length;
+  const avgInnerY = sumInnerY / goodFramesBuffer.length;
+  const avgOuterX = sumOuterX / goodFramesBuffer.length;
+  const avgOuterY = sumOuterY / goodFramesBuffer.length;
 
-  if (overlayEl) overlayEl.style.display = 'none';
-  const crosshair = document.querySelector('.crosshair-fixed');
-  if (crosshair) crosshair.style.display = 'none';
+  // Смещение в пикселях
+  const dxPx = avgInnerX - avgOuterX;
+  const dyPx = avgInnerY - avgOuterY;
+  const distPx = Math.sqrt(dxPx * dxPx + dyPx * dyPx);
 
-  if (typeof calculateOnFrozen === 'function') {
-    calculateOnFrozen(canvasEl, w, h, best.inner, best.outer);
-  } else {
-    console.error('❌ Функция calculateOnFrozen не найдена. Проверьте подключение result.js.');
-  }
+  // Масштаб (мм/пиксель) считаем по усреднённым радиусам
+  const avgInnerR = goodFramesBuffer.reduce((s, f) => s + f.inner.rx, 0) / goodFramesBuffer.length;
+  const avgOuterR = goodFramesBuffer.reduce((s, f) => s + f.outer.rx, 0) / goodFramesBuffer.length;
 
-  if (videoEl && videoEl.srcObject) {
-    videoEl.srcObject.getTracks().forEach(t => t.stop());
-    videoEl.srcObject = null;
-  }
+  const dornDiamVal = parseFloat(document.getElementById('dornDiam').value) || PARAMS.dornDiam;
+  const matrDiamVal = parseFloat(document.getElementById('matrDiam').value) || PARAMS.matrixDiam;
+
+  const scaleInner = dornDiamVal / (avgInnerR * 2); // мм/пиксель
+  const scaleOuter = matrDiamVal / (avgOuterR * 2);
+  const scale = (scaleInner + scaleOuter) / 2;
+
+  // Смещение в мм
+  const shiftMm = distPx * scale;
+
+  // Зазор (разница диаметров) в мм — это просто введённые пользователем значения
+  const gapMm = matrDiamVal - dornDiamVal;
+
+  document.getElementById('metricShift').textContent = shiftMm.toFixed(2);
+  document.getElementById('metricGap').textContent = gapMm.toFixed(2);
 }
 
-function resetApp(stopCamera) {
-  if (stopCamera === undefined) stopCamera = true;
+// Обработчики UI
+document.addEventListener('DOMContentLoaded', () => {
+  initElements();
 
-  isRunning = false;
-  currentState = STATE.SEARCH;
-  goodFramesBuffer = [];
-
-  if (videoEl) videoEl.style.display = 'block';
-  if (overlayEl) overlayEl.style.display = 'block';
-  if (frozenImgEl) {
-    frozenImgEl.style.display = 'none';
-    frozenImgEl.src = '';
-  }
-  if (frozenOverlayEl) {
-    frozenOverlayEl.style.display = 'none';
-  }
-
-  const crosshair = document.querySelector('.crosshair-fixed');
-  if (crosshair) crosshair.style.display = 'block';
-
-  const metricIds = [
-    'valGap', 'valNonUniform', 'valShift', 'valShiftX', 'valShiftY',
-    'valGapLeft', 'valGapRight', 'valGapTop', 'valGapBottom'
-  ];
-  metricIds.forEach(id => {
-    const el = document.getElementById(id);
-    if (el) el.textContent = '--';
+  document.getElementById('btnReset').addEventListener('click', () => {
+    goodFramesBuffer = [];
+    lastScore = 0;
+    currentState = STATE.SEARCH;
+    startCamera(); // перезапуск сбрасывает состояние и запрашивает поток заново
   });
+});
 
-  if (stopCamera && videoEl && videoEl.srcObject) {
-    videoEl.srcObject.getTracks().forEach(t => t.stop());
-    videoEl.srcObject = null;
-  }
-
-  updateStatus('ok', 'Сброшено. Нажмите "ЗАПУСТИТЬ КАМЕРУ".');
-}
-
-// КОНЕЦ ФАЙЛА
+window.onOpenCvLoad = () => {
+  cvReady = true;
+  console.log('OpenCV loaded');
+  startCamera();
+};
+// конец файла
