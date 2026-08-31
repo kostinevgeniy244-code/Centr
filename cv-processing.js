@@ -214,5 +214,7 @@ const CVProcessing = {
 };
 
 export { CVProcessing };
+logLoad('cv-processing.js — подключён', 'ok');
+
 
 // Конец файла
