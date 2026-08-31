@@ -78,5 +78,6 @@ const Camera = {
 };
 
 export { Camera };
+logLoad('camera.js — подключён', 'ok');
 
 // Конец файла
