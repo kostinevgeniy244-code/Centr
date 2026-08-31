@@ -3,6 +3,15 @@
 import { Camera } from './camera.js';
 import { CONFIG } from './config.js';
 
+function logLoad(msg, type = 'ok') {
+  const list = document.getElementById('load-messages');
+  if (!list) return;
+  const li = document.createElement('li');
+  li.textContent = msg;
+  li.className = type;
+  list.appendChild(li);
+}
+
 const UI = {
   elements: {
     inputScreen: document.getElementById('input-screen'),
