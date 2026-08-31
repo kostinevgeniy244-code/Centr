@@ -1,10 +1,13 @@
 // app.js
-logLoad('app.js — подключён', 'ok');
 
 import { CONFIG } from './config.js';
 import { Camera } from './camera.js';
 import { CVProcessing } from './cv-processing.js';
-import { UI, UI as UIModule } from './ui.js';
+import { UI } from './ui.js';
+
+if (typeof logLoad === 'function') {
+  logLoad('app.js — подключён', 'ok');
+}
 
 let animationFrameId = null;
 let isProcessing = false;
@@ -14,16 +17,13 @@ let isProcessing = false;
  */
 window.onOpenCvLoad = function (opencvModule) {
   console.log('✅ OpenCV загружен');
-  CVProcessing.init(opencvModule);
-  UI.init();
- window.onOpenCvLoad = function (opencvModule) {
-  console.log('✅ OpenCV загружен');
-  logLoad('OpenCV — готов', 'ok');
-  CVProcessing.init(opencvModule);
-  UI.init();
-};
+  if (typeof logLoad === 'function') {
+    logLoad('OpenCV — готов', 'ok');
+  }
 
- // Камера и интерфейс уже инициализируются по действиям пользователя,
+  CVProcessing.init(opencvModule);
+  UI.init();
+  // Камера и интерфейс уже инициализируются по действиям пользователя,
   // здесь только подготовка ядра обработки.
 };
 
@@ -33,7 +33,7 @@ window.onOpenCvLoad = function (opencvModule) {
  * непрерывно обрабатывает кадры.
  */
 function processLoop(timestamp) {
-  if (UIModule.currentState === UIModule.STATE.FROZEN) {
+  if (UI.currentState === UI.STATE.FROZEN) {
     // В режиме заморозки ничего не делаем — кадр уже сохранён
     return;
   }
@@ -43,6 +43,10 @@ function processLoop(timestamp) {
     try {
       const videoEl = Camera.video;
       const overlayCanvas = document.getElementById('overlay');
+
+      if (!videoEl || !overlayCanvas) {
+        return;
+      }
 
       // Получаем параметры из data-атрибутов video
       const matrixDiameter = parseFloat(videoEl.dataset.matrixDiameter) || 0;
@@ -62,23 +66,25 @@ function processLoop(timestamp) {
       if (result) {
         // Если нашли объекты — проверяем допуски и переключаем статус
         const isGood = result.offset <= toleranceOffset && result.unevenness <= toleranceUneven;
+
         if (isGood) {
-          UIModule.setState(UIModule.STATE.LOCKED);
-          UIModule.updateResults(result);
+          UI.currentState = UI.STATE.LOCKED;
+          UI.updateStatusUI();
+          UI.showResults(result);
         } else {
-          // Даже если нашли, но брак — остаёмся в поиске, но обновляем результаты
-          UIModule.updateResults(result);
-          // Можно оставить в SEARCH или сделать отдельный статус — пока остаёмся в SEARCH
-          if (UIModule.currentState !== UIModule.STATE.SEARCH) {
-            UIModule.setState(UIModule.STATE.SEARCH);
+          // Даже если нашли, но брак — обновляем результаты, остаёмся в SEARCH
+          UI.showResults(result);
+          if (UI.currentState !== UI.STATE.SEARCH) {
+            UI.currentState = UI.STATE.SEARCH;
+            UI.updateStatusUI();
           }
         }
       } else {
         // Не нашли подходящих объектов — сбрасываем панель результатов
-        const el = UIModule.elements;
-        el.resultPanel.classList.add('hidden');
-        if (UIModule.currentState !== UIModule.STATE.SEARCH) {
-          UIModule.setState(UIModule.STATE.SEARCH);
+        UI.elements.resultPanel.classList.add('hidden');
+        if (UI.currentState !== UI.STATE.SEARCH) {
+          UI.currentState = UI.STATE.SEARCH;
+          UI.updateStatusUI();
         }
       }
     } catch (err) {
@@ -89,7 +95,7 @@ function processLoop(timestamp) {
   }
 
   animationFrameId = requestAnimationFrame(processLoop);
-};
+}
 
 /**
  * Запуск цикла обработки. Вызывается после старта камеры и перехода на экран камеры.
@@ -101,9 +107,9 @@ function startProcessingLoop() {
 
 // Перехватываем момент, когда UI переключает экраны и запускает камеру,
 // чтобы стартовать цикл обработки. Для этого немного «подружим» app.js с UI.
-const originalStartMeasurement = UIModule.startMeasurement.bind(UIModule);
-UIModule.startMeasurement = function (params) {
-  originalStartMeasurement(params);
+const originalStartMeasurement = UI.handleStart.bind(UI);
+UI.handleStart = function () {
+  originalStartMeasurement();
   // После переключения на экран камеры и старта потока запускаем цикл
   setTimeout(startProcessingLoop, 100);
 };
