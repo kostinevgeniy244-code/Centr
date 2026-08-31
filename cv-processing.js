@@ -1,220 +1,231 @@
 // cv-processing.js
 
-import { CONFIG } from './config.js';
+if (typeof logLoad === 'function') {
+  logLoad('cv-processing.js — подключён', 'ok');
+}
 
-const CVProcessing = {
-  cv: null, // ссылка на глобальный cv из OpenCV.js
-  isReady: false,
+export const CVProcessing = {
+  cv: null,
+  initialized: false,
 
   init(opencvModule) {
     this.cv = opencvModule;
-    this.isReady = true;
-    console.log('✅ OpenCV готов к обработке');
+    this.initialized = true;
+    console.log('✅ CVProcessing инициализирован');
+    if (typeof logLoad === 'function') {
+      logLoad('CVProcessing — инициализирован', 'ok');
+    }
   },
 
   /**
-   * Основной конвейер обработки кадра:
-   * 1. Читаем кадр из video в cv.Mat (RGBA)
-   * 2. Конвертируем в серый
-   * 3. GaussianBlur
-   * 4. Canny
-   * 5. Морфологическое замыкание
-   * 6. findContours
-   * 7. Фильтрация по площади и круглости
-   * 8. Разделение на матрицу и дорн по размеру
-   * 9. Расчёт масштаба, смещения и неравномерности
+   * Основной метод обработки кадра.
+   * Возвращает объект результата или null, если объекты не найдены.
    */
-  processFrame(videoEl, overlayCanvas, inputParams) {
-    if (!this.isReady || !videoEl || videoEl.paused || !videoEl.videoWidth) {
+  processFrame(videoEl, overlayCanvas, params) {
+    if (!this.initialized || !this.cv) {
+      console.warn('⚠️ OpenCV ещё не инициализирован');
       return null;
     }
 
-    const cv = this.cv;
-    let srcMat = null, grayMat = null, edgesMat = null, closedMat = null;
-    let contours = new cv.PointVectorVector();
-    let hierarchy = new cv.Mat();
+    const { matrixDiameter, dornDiameter, toleranceOffset, toleranceUneven } = params;
+
+    // Читаем кадр из видео в cv.Mat
+    const src = this.cv.imread(videoEl);
+    if (src.empty()) {
+      src.delete();
+      return null;
+    }
 
     try {
-      // 1. Чтение кадра из video
-      srcMat = cv.imread(videoEl); // RGBA
+      // 1. Уменьшаем кадр до рабочего разрешения для скорости на мобильном
+      const PROCESS_WIDTH = 320;
+      const PROCESS_HEIGHT = 180;
 
-      // 2. Конвертация в серый
-      grayMat = new cv.Mat();
-      cv.cvtColor(srcMat, grayMat, cv.COLOR_RGBA2GRAY);
+      const smallSize = new this.cv.Size(PROCESS_WIDTH, PROCESS_HEIGHT);
+      const resized = new this.cv.Mat();
+      this.cv.resize(src, resized, smallSize, this.cv.INTER_LINEAR);
 
-      // 3. Размытие
-      const blurSize = new cv.Size(5, 5);
-      cv.GaussianBlur(grayMat, grayMat, blurSize, 0);
+      // 2. Конвертируем в оттенки серого
+      const gray = new this.cv.Mat();
+      this.cv.cvtColor(resized, gray, this.cv.COLOR_RGBA2GRAY);
 
-      // 4. Canny
-      edgesMat = new cv.Mat();
-      cv.Canny(grayMat, edgesMat, CONFIG.CANNY_THRESH_1, CONFIG.CANNY_THRESH_2);
+      // 3. Canny-детектор границ
+      const edges = new this.cv.Mat();
+      this.cv.Canny(gray, edges, CONFIG.CANNY_THRESH_1, CONFIG.CANNY_THRESH_2);
 
-      // 5. Морфологическое замыкание (закрытие разрывов контура)
-      closedMat = new cv.Mat();
-      const kernel = cv.getStructuringElement(
-        cv.MORPH_RECT,
-        new cv.Size(CONFIG.MORPH_KERNEL_SIZE, CONFIG.MORPH_KERNEL_SIZE)
+      // 4. Морфологическое замыкание, чтобы закрыть разрывы в контурах
+      const kernel = this.cv.getStructuringElement(
+        this.cv.MORPH_RECT,
+        new this.cv.Size(CONFIG.MORPH_KERNEL_SIZE, CONFIG.MORPH_KERNEL_SIZE)
       );
-      cv.morphologyEx(edgesMat, closedMat, cv.MORPH_CLOSE, kernel);
+      const closed = new this.cv.Mat();
+      this.cv.morphologyEx(edges, closed, this.cv.MORPH_CLOSE, kernel);
 
-      // 6. Поиск контуров
-      cv.findContours(closedMat, contours, hierarchy, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
+      // 5. Поиск контуров
+      const contours = new this.cv.MatVector();
+      const hierarchy = new this.cv.Mat();
+      this.cv.findContours(closed, contours, hierarchy, this.cv.RETR_EXTERNAL, this.cv.CHAIN_APPROX_SIMPLE);
 
-      // 7. Отбор и фильтрация контуров: площадь и круглость
-      const candidates = [];
+      let matrixObj = null;
+      let dornObj = null;
+
+      // 6. Анализ контуров: ищем два круга (матрица и дорн)
       for (let i = 0; i < contours.size(); i++) {
         const cnt = contours.get(i);
-        const area = cv.contourArea(cnt);
+        const area = this.cv.contourArea(cnt);
+
         if (area < CONFIG.MIN_CONTOUR_AREA) continue;
 
-        const perimeter = cv.arcLength(cnt, true);
+        // Вычисляем круглость: 4π * площадь / периметр²
+        const perimeter = this.cv.arcLength(cnt, true);
         if (perimeter === 0) continue;
         const circularity = (4 * Math.PI * area) / (perimeter * perimeter);
+
         if (circularity < CONFIG.CIRCULARITY_THRESHOLD) continue;
 
-        // Вычисление ограничивающего прямоугольника и центра
-        const rect = cv.boundingRect(cnt);
-        const centerX = rect.x + rect.width / 2;
-        const centerY = rect.y + rect.height / 2;
-
-        candidates.push({
-          cnt,
+        // Подбираем, что это: матрица или дорн — по площади (или по известному диаметру)
+        // Здесь простая эвристика: больший контур — матрица, меньший — дорн
+        const candidate = {
+          contour: cnt,
           area,
           circularity,
-          rect,
-          center: new cv.Point(centerX, centerY),
-          diameterPx: Math.sqrt(area / Math.PI) * 2, // приблизительный диаметр
-        });
+          boundingRect: this.cv.boundingRect(cnt), // {x, y, width, height}
+        };
+
+        if (!matrixObj || area > matrixObj.area) {
+          if (matrixObj) dornObj = matrixObj; // сдвигаем старый «больший» в «меньший»
+          matrixObj = candidate;
+        } else if (!dornObj || area > dornObj.area) {
+          dornObj = candidate;
+        }
       }
 
-      if (candidates.length < 2) {
-        return null; // Недостаточно кандидатов
+      if (!matrixObj || !dornObj) {
+        // Не нашли пару кругов — возвращаем null
+        cleanupMats([src, resized, gray, edges, closed, kernel, contours, hierarchy]);
+        return null;
       }
 
-      // Сортируем по площади (самый большой — матрица, следующий — дорн)
-      candidates.sort((a, b) => b.area - a.area);
-      const matrixObj = candidates[0];
-      const dornObj = candidates[1];
+      // 7. Вычисляем центры и диаметры в пикселях
+      const getCenter = (rect) => {
+        return {
+          x: rect.x + rect.width / 2,
+          y: rect.y + rect.height / 2,
+        };
+      };
 
-      // Расчёт масштаба (мм/пиксель) по матрице
-      const scaleMmPerPx = inputParams.matrixDiameter / matrixObj.diameterPx;
+      const mCenter = getCenter(matrixObj.boundingRect);
+      const dCenter = getCenter(dornObj.boundingRect);
+
+      // Диаметр по bounding box (грубая оценка)
+      const matrixDiamPx = Math.max(matrixObj.boundingRect.width, matrixObj.boundingRect.height);
+      const dornDiamPx = Math.max(dornObj.boundingRect.width, dornObj.boundingRect.height);
+
+      // Оценка масштаба: мм/пиксель (по известному диаметру от оператора)
+      // Используем матрицу как опорный объект для калибровки масштаба
+      const scaleMmPerPx = matrixDiameter / matrixDiamPx;
+
+      // Проверка разумности масштаба (защита от ошибок детекции)
       if (scaleMmPerPx < CONFIG.MIN_SCALE_MM_PER_PX || scaleMmPerPx > CONFIG.MAX_SCALE_MM_PER_PX) {
-        return null; // Масштаб вне допустимого диапазона
+        cleanupMats([src, resized, gray, edges, closed, kernel, contours, hierarchy]);
+        return null;
       }
 
-      // Реальные размеры в мм
-      const matrixDiamMm = matrixObj.diameterPx * scaleMmPerPx;
-      const dornDiamMm = dornObj.diameterPx * scaleMmPerPx;
+      // Перевод в мм
+      const matrixDiamMm = matrixDiamPx * scaleMmPerPx;
+      const dornDiamMm = dornDiamPx * scaleMmPerPx;
 
-      // Смещение центров (в мм)
-      const dxPx = matrixObj.center.x - dornObj.center.x;
-      const dyPx = matrixObj.center.y - dornObj.center.y;
+      // Смещение центров в мм
+      const dxPx = mCenter.x - dCenter.x;
+      const dyPx = mCenter.y - dCenter.y;
       const offsetMm = Math.sqrt(dxPx * dxPx + dyPx * dyPx) * scaleMmPerPx;
 
-      // Неравномерность зазора: разница между ожидаемым и фактическим зазором
-      // Ожидаемый зазор = (матрица - дорн) / 2
-      const expectedGapMm = (matrixDiamMm - dornDiamMm) / 2;
-      // Фактический зазор в точке минимального расстояния (грубая оценка через смещение)
-      const actualGapMm = expectedGapMm - offsetMm; // упрощённая модель
-      const unevennessMm = Math.abs(expectedGapMm - actualGapMm);
+      // Неравномерность зазора — упрощённо как разница диаметров (в мм)
+      const unevennessMm = Math.abs(matrixDiamMm - dornDiamMm);
 
-      // Отрисовка оверлея
-      this.drawOverlay(overlayCanvas, matrixObj, dornObj, scaleMmPerPx);
+      // 8. Отрисовка на оверлей-канвасе (в масштабе оригинального видео)
+      this.drawOverlay(overlayCanvas, videoEl, matrixObj, dornObj, scaleMmPerPx);
+
+      cleanupMats([src, resized, gray, edges, closed, kernel, contours, hierarchy]);
 
       return {
         matrixDiam: matrixDiamMm,
         dornDiam: dornDiamMm,
         offset: offsetMm,
         unevenness: unevennessMm,
-        scale: scaleMmPerPx,
-        centers: {
-          matrix: { x: matrixObj.center.x, y: matrixObj.center.y },
-          dorn: { x: dornObj.center.x, y: dornObj.center.y },
-        },
       };
     } catch (err) {
       console.error('❌ Ошибка обработки кадра:', err);
+      cleanupMats([src]);
       return null;
-    } finally {
-      // Освобождение памяти
-      if (srcMat) srcMat.delete();
-      if (grayMat) grayMat.delete();
-      if (edgesMat) edgesMat.delete();
-      if (closedMat) closedMat.delete();
-      contours.delete();
-      hierarchy.delete();
     }
   },
 
-  drawOverlay(canvas, matrixObj, dornObj, scaleMmPerPx) {
-    const ctx = canvas.getContext('2d');
-    const w = canvas.width;
-    const h = canvas.height;
+  /**
+   * Отрисовка контуров, центров и размеров на оверлей-канвасе.
+   * Канвас overlayCanvas должен иметь те же размеры, что и videoEl.
+   */
+  drawOverlay(canvasEl, videoEl, matrixObj, dornObj, scaleMmPerPx) {
+    const ctx = canvasEl.getContext('2d');
+    ctx.clearRect(0, 0, canvasEl.width, canvasEl.height);
 
-    // Очистка оверлея
-    ctx.clearRect(0, 0, w, h);
+    // Коэффициент масштабирования канваса к рабочему кадру OpenCV
+    const scaleX = canvasEl.width / 320;
+    const scaleY = canvasEl.height / 180;
 
-    // Вспомогательная сетка (опционально)
-    ctx.strokeStyle = 'rgba(255,255,255,0.2)';
-    ctx.lineWidth = 1;
-    for (let x = 0; x <= w; x += 32) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, h); ctx.stroke(); }
-    for (let y = 0; y <= h; y += 32) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke(); }
+    const drawContour = (obj, color, label) => {
+      const rect = obj.boundingRect;
+      // Масштабируем координаты под размер канваса
+      const x = rect.x * scaleX;
+      const y = rect.y * scaleY;
+      const w = rect.width * scaleX;
+      const h = rect.height * scaleY;
 
-    // Рисуем контуры
-    const drawContour = (cnt, color, label) => {
       ctx.strokeStyle = color;
       ctx.lineWidth = 2;
-      ctx.beginPath();
-      for (let i = 0; i < cnt.size(); i++) {
-        const p = cnt.get(i);
-        if (i === 0) ctx.moveTo(p.x, p.y);
-        else ctx.lineTo(p.x, p.y);
-      }
-      ctx.closePath();
-      ctx.stroke();
+      ctx.strokeRect(x, y, w, h);
 
       // Центр
+      const cx = x + w / 2;
+      const cy = y + h / 2;
       ctx.fillStyle = color;
       ctx.beginPath();
-      ctx.arc(p.x, p.y, 4, 0, Math.PI * 2);
+      ctx.arc(cx, cy, 6, 0, 2 * Math.PI);
       ctx.fill();
 
       // Подпись
-      ctx.fillStyle = '#000';
+      ctx.fillStyle = '#ffffff';
       ctx.font = '14px Arial';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'top';
-      ctx.fillText(label, p.x, p.y - 10);
+      ctx.fillText(label, cx, cy + 10);
     };
 
-    drawContour(matrixObj.cnt, 'rgba(0,170,255,0.8)', 'Матрица');
-    drawContour(dornObj.cnt, 'rgba(100,255,100,0.8)', 'Дорн');
+    drawContour(matrixObj, '#2ecc71', `М: ${matrixObj.boundingRect.width.toFixed(1)}px`);
+    drawContour(dornObj, '#e74c3c', `Д: ${dornObj.boundingRect.width.toFixed(1)}px`);
 
     // Линия смещения
-    ctx.strokeStyle = 'rgba(255,165,0,0.9)';
-    ctx.setLineDash([5, 5]);
+    const mRect = matrixObj.boundingRect;
+    const dRect = dornObj.boundingRect;
+    const mx = (mRect.x + mRect.width / 2) * scaleX;
+    const my = (mRect.y + mRect.height / 2) * scaleY;
+    const dx = (dRect.x + dRect.width / 2) * scaleX;
+    const dy = (dRect.y + dRect.height / 2) * scaleY;
+
+    ctx.strokeStyle = '#f39c12';
     ctx.lineWidth = 2;
     ctx.beginPath();
-    ctx.moveTo(matrixObj.center.x, matrixObj.center.y);
-    ctx.lineTo(dornObj.center.x, dornObj.center.y);
+    ctx.moveTo(mx, my);
+    ctx.lineTo(dx, dy);
     ctx.stroke();
-    ctx.setLineDash([]);
-
-    // Текст с масштабом
-    ctx.fillStyle = 'white';
-    ctx.font = '16px Arial';
-    ctx.textAlign = 'left';
-    ctx.textBaseline = 'bottom';
-    ctx.fillStyle = 'rgba(0,0,0,0.7)';
-    ctx.fillRect(10, h - 30, 160, 24);
-    ctx.fillStyle = 'white';
-    ctx.fillText(`Масштаб: ${scaleMmPerPx.toFixed(3)} мм/пкс`, 15, h - 8);
   },
 };
 
-export { CVProcessing };
-logLoad('cv-processing.js — подключён', 'ok');
-
+// Вспомогательная функция для очистки cv.Mat (чтобы не было утечек памяти в браузере)
+function cleanupMats(mats) {
+  mats.forEach(mat => {
+    if (mat && !mat.empty()) mat.delete();
+  });
+}
 
 // Конец файла
