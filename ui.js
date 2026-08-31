@@ -51,7 +51,9 @@ const UI = {
     if (!el.inputScreen || !el.cameraScreen) {
       console.error('❌ Не найдены ключевые DOM-элементы');
       return false;
-    }
+  logLoad('UI — инициализирован', 'ok');
+ 
+ }
 
     // Кнопка «Начать замер»
     const startBtn = document.getElementById('start-btn');
