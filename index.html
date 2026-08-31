@@ -1,96 +1,142 @@
 <!DOCTYPE html>
 <html lang="ru">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>OpenCV: Дорн/Матрица замер</title>
-    <!-- Подключаем OpenCV.js через CDN -->
-    <script src="https://docs.opencv.org/4.5.0/opencv.js" async></script>
-    <link rel="stylesheet" href="styles.css" />
-  </head>
-  <body>
-    <div class="app">
-      <header>
-        <!-- Панель логов загрузки -->
-        <div class="load-log">
-          <strong>Статус загрузки:</strong>
-          <ul id="load-messages" class="log-list"></ul>
-        </div>
-        <h1>Замер: Дорн / Матрица</h1>
-      </header>
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>Замер: Дорн / Матрица</title>
+  <link rel="stylesheet" href="styles.css" />
 
-      <!-- Экран ввода параметров -->
-      <section id="input-screen" class="screen active">
-        <div class="form-group">
-          <label for="matrix-diameter">Диаметр матрицы, мм</label>
-          <input type="number" id="matrix-diameter" value="50" step="0.1" />
-        </div>
-        <div class="form-group">
-          <label for="dorn-diameter">Диаметр дорна, мм</label>
-          <input type="number" id="dorn-diameter" value="30" step="0.1" />
-        </div>
-        <div class="form-group">
-          <label for="tolerance-offset">Допуск смещения, мм (по умолчанию 0.01)</label>
-          <input type="number" id="tolerance-offset" value="0.01" step="0.001" />
-        </div>
-        <div class="form-group">
-          <label for="tolerance-uneven">Допуск неравномерности, мм (по умолчанию 0.01)</label>
-          <input type="number" id="tolerance-uneven" value="0.01" step="0.001" />
-        </div>
-        <button id="start-btn" type="button">Начать замер</button>
-      </section>
+  <!-- 
+    ВАЖНОЕ ИЗМЕНЕНИЕ: 
+    Эта функция инициализируется ДО загрузки модулей. 
+    Она гарантирует, что logLoad() сработает даже если #log-panel нет в HTML.
+  -->
+  <script>
+    (function() {
+      const LOG_PANEL_ID = 'log-panel';
+      let LOG_PANEL = document.getElementById(LOG_PANEL_ID);
 
-      <!-- Экран камеры и обработки -->
-      <section id="camera-screen" class="screen hidden">
-        <div class="status-bar">
-          <span id="status-text">РЕЖИМ: ПОИСК</span>
-          <span id="status-dot" class="dot dot-search"></span>
-        </div>
-
-        <div class="video-container">
-          <video id="video" autoplay playsinline muted></video>
-          <canvas id="overlay" class="overlay"></canvas>
-        </div>
-
-        <canvas id="frozen-canvas" class="hidden"></canvas>
-
-        <div class="controls">
-          <button id="freeze-btn" type="button" disabled>Зафиксировать результат</button>
-          <button id="reset-btn" type="button">Сброс</button>
-        </div>
-
-        <div id="result-panel" class="result-panel hidden">
-          <h3>Результаты замера</h3>
-          <ul>
-            <li><strong>Диаметр матрицы:</strong> <span id="res-matrix-diam">—</span> мм</li>
-            <li><strong>Диаметр дорна:</strong> <span id="res-dorn-diam">—</span> мм</li>
-            <li><strong>Смещение центров:</strong> <span id="res-offset">—</span> мм</li>
-            <li><strong>Неравномерность зазора:</strong> <span id="res-uneven">—</span> мм</li>
-            <li><strong>Вердикт:</strong> <span id="res-verdict" class="verdict"></span></li>
-          </ul>
-        </div>
-      </section>
-    </div>
-
-    <!-- Глобальная функция лога загрузки (доступна до подключения модулей) -->
-    <script>
-      function logLoad(msg, type) {
-        type = type || 'ok';
-        var list = document.getElementById('load-messages');
-        if (!list) return;
-        var li = document.createElement('li');
-        li.textContent = msg;
-        li.className = type;
-        list.appendChild(li);
+      // Создаем панель логов, если её нет в DOM
+      if (!LOG_PANEL) {
+        LOG_PANEL = document.createElement('div');
+        LOG_PANEL.id = LOG_PANEL_ID;
+        LOG_PANEL.style.cssText = `
+          position: fixed;
+          top: 0;
+          left: 0;
+          width: 100%;
+          max-height: 160px;
+          overflow-y: auto;
+          background: #fff;
+          border-bottom: 2px solid #333;
+          z-index: 99999;
+          font-family: monospace;
+          font-size: 11px;
+          line-height: 1.2;
+          padding: 4px 8px;
+          box-sizing: border-box;
+          box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+        `;
+        document.body.prepend(LOG_PANEL);
       }
-    </script>
 
-    <!-- Модульные скрипты -->
-    <script type="module" src="config.js"></script>
-    <script type="module" src="camera.js"></script>
-    <script type="module" src="cv-processing.js"></script>
-    <script type="module" src="ui.js"></script>
-    <script type="module" src="app.js"></script>
-  </body>
+      window.logLoad = function(msg, status = 'info') {
+        const time = new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit', second:'2-digit'});
+        const icons = { ok: '✅', err: '❌', warn: '⚠️', info: 'ℹ️' };
+        const colors = { ok: '#1976d2', err: '#d32f2f', warn: '#ed6c02', info: '#555' };
+        
+        const icon = icons[status] || icons.info;
+        const color = colors[status] || colors.info;
+
+        const line = document.createElement('div');
+        line.textContent = `[${time}] ${icon} \${msg}`;
+        line.style.color = color;
+        line.style.margin = '2px 0';
+        
+        // Добавляем новые логи сверху
+        LOG_PANEL.prepend(line);
+
+        // Ограничиваем количество строк (чтобы не забивать память)
+        const maxLines = 60;
+        while (LOG_PANEL.children.length > maxLines) {
+          LOG_PANEL.lastChild.remove();
+        }
+      };
+
+      // Сразу логируем факт загрузки самого HTML
+      window.logLoad('HTML загружен, панель логов активна', 'ok');
+    })();
+  </script>
+
+  <!-- Подключаем скрипты строго ПОСЛЕ определения window.logLoad -->
+  <script type="module" src="config.js"></script>
+  <script type="module" src="camera.js"></script>
+  <script type="module" src="cv-processing.js"></script>
+  <script type="module" src="ui.js"></script>
+  <script type="module" src="app.js"></script>
+</head>
+<body>
+
+  <!-- Основной интерфейс -->
+  <header>
+    <h1>Замер: Дорн / Матрица</h1>
+  </header>
+
+  <main>
+    <section class="controls">
+      <h3>Параметры замера</h3>
+      
+      <div class="form-group">
+        <label for="matrix-diam">Диаметр матрицы, мм</label>
+        <input type="number" id="matrix-diam" value="20" step="0.01" min="0">
+      </div>
+
+      <div class="form-group">
+        <label for="dorn-diam">Диаметр дорна, мм</label>
+        <input type="number" id="dorn-diam" value="6" step="0.01" min="0">
+      </div>
+
+      <div class="form-group">
+        <label for="tol-offset">Допуск смещения, мм (по умолчанию 0.01)</label>
+        <input type="number" id="tol-offset" value="0.01" step="0.001">
+      </div>
+
+      <div class="form-group">
+        <label for="tol-uneven">Допуск неравномерности, мм (по умолчанию 0.01)</label>
+        <input type="number" id="tol-uneven" value="0.01" step="0.001">
+      </div>
+
+      <button id="start-btn" class="btn-primary">Начать замер</button>
+    </section>
+
+    <section class="status-bar">
+      <span id="status-text">РЕЖИМ: ОЖИДАНИЕ</span>
+    </section>
+
+    <section class="video-container">
+      <!-- Сюда камера вставит поток -->
+      <video id="camera-video" autoplay playsinline muted></video>
+      <canvas id="overlay" class="overlay"></canvas>
+    </section>
+
+    <section class="results-panel" id="results-panel">
+      <h3>Результаты</h3>
+      <p>Матрица: <span id="res-matrix">--</span> мм</p>
+      <p>Дорн: <span id="res-dorn">--</span> мм</p>
+      <p>Смещение: <span id="res-offset">--</span> мм</p>
+      <p>Неравномерность: <span id="res-uneven">--</span> мм</p>
+      <p class="verdict" id="verdict">Статус: --</p>
+    </section>
+  </main>
+
+  <!-- 
+    МОБИЛЬНАЯ КОНСОЛЬ (ERUDA)
+    Добавляет кнопку в правый нижний угол. Нажав на неё, ты увидишь 
+    полную консоль Chrome (console.log, ошибки, сеть) прямо на телефоне.
+    Это критически важно для отладки OpenCV.js.
+  -->
+  <script src="https://cdn.jsdelivr.net/npm/eruda"></script>
+  <script>eruda.init();</script>
+
+</body>
 </html>
-<!-- Конец файла -->
