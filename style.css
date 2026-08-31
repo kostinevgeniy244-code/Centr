@@ -1,4 +1,4 @@
-/* styles.css */
+/* styles.css - Исправленная версия */
 
 :root {
   --bg-color: #f5f7fa;
@@ -17,10 +17,12 @@ body {
   font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
   background-color: var(--bg-color);
   color: var(--text-main);
-  overflow: hidden;
+  /* Убрали overflow: hidden, чтобы страница могла скроллиться на мобильных */
+  min-height: 100vh;
 }
 
-.app {
+/* Стили для main, чтобы имитировать контейнер .app */
+main {
   max-width: 600px;
   margin: 0 auto;
   background: var(--panel-bg);
@@ -34,48 +36,53 @@ header {
   padding: 16px;
   border-bottom: 1px solid var(--border-color);
   text-align: center;
+  background: var(--panel-bg); /* Чтобы шапка не сливалась с фоном body */
+  position: sticky;
+  top: 0;
+  z-index: 10;
 }
 
 header h1 {
   margin: 0;
   font-size: 1.25rem;
   line-height: 1.3;
+  color: var(--text-main);
 }
 
-/* Панель логов загрузки */
-.load-log {
-  padding: 8px 12px;
-  background: #f8f9fa;
-  border: 1px solid #e9ecef;
-  border-radius: 6px;
-  margin: 8px 16px;
-  font-size: 0.85rem;
-  color: #495057;
-  text-align: left;
+/* Панель логов (та, что сверху) */
+#log-panel {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  max-height: 180px;
+  overflow-y: auto;
+  background: #f9f9f9;
+  border-bottom: 3px solid #2c3e50;
+  z-index: 999999;
+  font-family: monospace;
+  font-size: 11px;
+  line-height: 1.2;
+  padding: 6px 10px;
+  box-sizing: border-box;
+  box-shadow: 0 2px 10px rgba(0,0,0,0.15);
+  color: #333;
+  pointer-events: auto; /* Чтобы можно было скроллить логи */
 }
 
-.log-list {
-  margin: 4px 0 0 0;
-  padding: 0;
-  list-style: none;
-}
-
-.log-list li {
-  margin-bottom: 4px;
-}
-
-.log-list .ok { color: var(--accent-green); }
-.log-list .warn { color: #f39c12; }
-.log-list .err { color: var(--danger); }
-
-.screen {
+/* Панель управления (Параметры) */
+.controls {
   padding: 16px;
-  flex: 1;
-  position: relative;
+  flex: 1; /* Растягиваем, чтобы контент был по центру экрана */
+  display: flex;
+  flex-direction: column;
 }
 
-.screen.hidden {
-  display: none;
+.controls h3 {
+  margin-bottom: 16px;
+  color: var(--text-main);
+  font-size: 1rem;
+  font-weight: 600;
 }
 
 .form-group {
@@ -87,6 +94,7 @@ header h1 {
   margin-bottom: 6px;
   font-weight: 500;
   font-size: 0.9rem;
+  color: #555;
 }
 
 .form-group input {
@@ -96,47 +104,52 @@ header h1 {
   border-radius: 8px;
   font-size: 1rem;
   box-sizing: border-box;
+  background: #fff;
 }
 
-button {
+/* Кнопка */
+button#start-btn {
   background: var(--accent-yellow);
   color: white;
   border: none;
-  padding: 12px 20px;
+  padding: 14px;
   border-radius: 10px;
   font-size: 1rem;
+  font-weight: 600;
   cursor: pointer;
   transition: background 0.2s, transform 0.1s;
   width: 100%;
+  margin-top: 10px;
 }
 
-button:hover:not(:disabled) {
+button#start-btn:hover:not(:disabled) {
   background: #d35400;
 }
 
-button:active:not(:disabled) {
+button#start-btn:active:not(:disabled) {
   transform: scale(0.98);
 }
 
-button[disabled] {
+button#start-btn[disabled] {
   background: #bdc3c7;
   cursor: not-allowed;
 }
 
 /* Статус-бар */
 .status-bar {
+  padding: 16px;
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 12px;
-  padding-bottom: 8px;
   border-bottom: 1px solid var(--border-color);
+  background: var(--panel-bg);
 }
 
 #status-text {
   font-weight: 600;
   text-transform: uppercase;
   font-size: 0.85rem;
+  color: var(--text-main);
 }
 
 .dot {
@@ -144,33 +157,27 @@ button[disabled] {
   height: 12px;
   border-radius: 50%;
   display: inline-block;
+  margin-left: 8px;
 }
 
-.dot-search {
-  background: var(--accent-yellow);
-}
-
-.dot-locked {
-  background: var(--accent-green);
-}
-
-.dot-frozen {
-  background: var(--accent-blue);
-}
+.dot-search { background: var(--accent-yellow); }
+.dot-locked { background: var(--accent-green); }
+.dot-frozen { background: var(--accent-blue); }
 
 /* Контейнер видео + оверлей */
 .video-container {
   position: relative;
   width: 100%;
-  aspect-ratio: 16/9;
+  aspect-ratio: 16/9; /* Фиксированное соотношение сторон */
   background: #000;
   border-radius: 12px;
   overflow: hidden;
   margin-bottom: 16px;
   box-shadow: inset 0 2px 8px rgba(0,0,0,0.2);
+  padding-bottom: 0; /* Убираем лишние отступы */
 }
 
-video, canvas.overlay, #frozen-canvas {
+video, canvas.overlay {
   position: absolute;
   top: 0;
   left: 0;
@@ -178,6 +185,7 @@ video, canvas.overlay, #frozen-canvas {
   height: 100%;
   object-fit: contain;
   border-radius: 12px;
+  display: block;
 }
 
 canvas.overlay {
@@ -185,65 +193,65 @@ canvas.overlay {
   opacity: 0.8;
 }
 
-#frozen-canvas {
-  opacity: 1;
-}
-
-.controls {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 10px;
-  margin-bottom: 16px;
-}
-
-.controls button {
-  width: auto;
-  padding: 10px 16px;
-  font-size: 0.95rem;
-}
-
-.result-panel {
+/* Панель результатов */
+.results-panel {
+  padding: 16px;
   background: #fafafa;
   border: 1px solid var(--border-color);
   border-radius: 10px;
-  padding: 14px;
+  margin-bottom: 20px;
 }
 
-.result-panel h3 {
-  margin: 0 0 10px 0;
+.results-panel h3 {
+  margin: 0 0 12px 0;
   font-size: 1rem;
+  color: var(--text-main);
 }
 
-.result-panel ul {
-  list-style: none;
-  padding: 0;
-  margin: 0;
-}
-
-.result-panel li {
-  margin-bottom: 6px;
+.results-panel p {
+  margin-bottom: 8px;
   font-size: 0.95rem;
+  color: #555;
 }
 
 .verdict {
+  margin-top: 12px;
+  padding: 10px;
+  border-radius: 6px;
   font-weight: bold;
+  text-align: center;
+  font-size: 1rem;
 }
 
 .verdict.good {
+  background: rgba(46, 204, 113, 0.1);
   color: var(--accent-green);
+  border: 1px solid var(--accent-green);
 }
 
 .verdict.bad {
+  background: rgba(231, 76, 60, 0.1);
   color: var(--danger);
+  border: 1px solid var(--danger);
 }
 
+/* Скрытый класс */
+.hidden {
+  display: none !important;
+}
+
+/* Адаптив для очень маленьких экранов */
 @media (max-width: 360px) {
-  .controls {
-    grid-template-columns: 1fr;
+  .controls h3 {
+    font-size: 0.9rem;
   }
-
-  button {
-    width: 100%;
+  
+  .form-group label {
+    font-size: 0.85rem;
+  }
+  
+  .form-group input {
+    padding: 8px 10px;
+    font-size: 0.9rem;
   }
 }
-<!-- Конец файла -->
