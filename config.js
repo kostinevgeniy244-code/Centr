@@ -1,56 +1,35 @@
 // config.js
 
-// Константы и настройки проекта
-const CONFIG = {
-  // Рабочее разрешение для обработки OpenCV (меньше = быстрее на мобильном)
+// Сразу сообщаем в лог, что модуль подключён
+if (typeof logLoad === 'function') {
+  logLoad('config.js — подключён', 'ok');
+}
+
+export const CONFIG = {
+  // Фиксированное рабочее разрешение для обработки (баланс скорость/качество на мобильном)
   PROCESS_WIDTH: 320,
+  PROCESS_HEIGHT: 180, // aspect 16:9
 
-  // Пороговые значения для детекции контуров
+  // Пороги Canny (подбираются экспериментально под камеру смартфона)
   CANNY_THRESH_1: 50,
-  CANNY_THRESH_2: 150,
+  CANNY_THRESH_2: 120,
 
-  // Морфологическое ядро для замыкания разрывов контура
-  MORPH_KERNEL_SIZE: 3,
+  // Размер ядра морфологического замыкания (закрытие разрывов контура)
+  MORPH_KERNEL_SIZE: 5,
 
-  // Минимальная площадь контура (в пикселях на рабочем разрешении)
-  MIN_CONTOUR_AREA: 200,
+  // Минимальная площадь контура (в пикселях) — отсекаем шум
+  MIN_CONTOUR_AREA: 150,
 
-  // Порог круглости (0–1): насколько контур должен быть близок к кругу
-  CIRCULARITY_THRESHOLD: 0.85,
+  // Порог круглости (0–1): чем ближе к 1, тем круглее объект
+  CIRCULARITY_THRESHOLD: 0.75,
 
-  // Допуски по умолчанию (мм)
+  // Допустимый диапазон масштаба (мм/пиксель) — защита от ошибок калибровки
+  MIN_SCALE_MM_PER_PX: 0.05, // 1 пиксель = минимум 0.05 мм
+  MAX_SCALE_MM_PER_PX: 0.2,  // 1 пиксель = максимум 0.2 мм
+
+  // Допуски по умолчанию (если не заданы оператором)
   DEFAULT_TOLERANCE_OFFSET: 0.01,
   DEFAULT_TOLERANCE_UNEVEN: 0.01,
-
-  // Минимально допустимый масштаб (мм/пиксель) — защита от абсурдных значений
-  MIN_SCALE_MM_PER_PX: 0.05,
-  MAX_SCALE_MM_PER_PX: 1.0,
-
-  // Настройки камеры
-  CAMERA_CONSTRAINTS: {
-    facingMode: { ideal: 'environment' }, // тыловая камера
-    width: { ideal: 1280 },
-    height: { ideal: 720 },
-  },
-
-  // Цвета отрисовки (BGR для OpenCV, но тут для UI)
-  COLORS: {
-    MATRIX: [0, 170, 255],      // синий
-    DORN: [100, 255, 100],      // зелёный
-    OFFSET_LINE: [0, 165, 255], // оранжево-жёлтый
-    TEXT: [255, 255, 255],
-  },
 };
-
-// Экспортируем конфигурацию, чтобы другие модули могли её использовать
-export { CONFIG };
-function logLoad(msg, type = 'ok') {
-  const list = document.getElementById('load-messages');
-  if (!list) return;
-  const li = document.createElement('li');
-  li.textContent = msg;
-  li.className = type;
-  list.appendChild(li);
-}
 
 // Конец файла
