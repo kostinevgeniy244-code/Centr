@@ -7,16 +7,15 @@
   <link rel="stylesheet" href="styles.css" />
 
   <!-- 
-    ВАЖНОЕ ИЗМЕНЕНИЕ: 
-    Эта функция инициализируется ДО загрузки модулей. 
-    Она гарантирует, что logLoad() сработает даже если #log-panel нет в HTML.
+    САМОЕ ВАЖНОЕ: 
+    Этот блок выполняется СРАЗУ при парсинге HTML. 
+    Он гарантирует, что logLoad() существует ДО загрузки любых модулей.
   -->
   <script>
     (function() {
       const LOG_PANEL_ID = 'log-panel';
       let LOG_PANEL = document.getElementById(LOG_PANEL_ID);
 
-      // Создаем панель логов, если её нет в DOM
       if (!LOG_PANEL) {
         LOG_PANEL = document.createElement('div');
         LOG_PANEL.id = LOG_PANEL_ID;
@@ -25,17 +24,18 @@
           top: 0;
           left: 0;
           width: 100%;
-          max-height: 160px;
+          max-height: 180px;
           overflow-y: auto;
-          background: #fff;
-          border-bottom: 2px solid #333;
-          z-index: 99999;
+          background: #f9f9f9;
+          border-bottom: 3px solid #2c3e50;
+          z-index: 999999;
           font-family: monospace;
           font-size: 11px;
           line-height: 1.2;
-          padding: 4px 8px;
+          padding: 6px 10px;
           box-sizing: border-box;
-          box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+          box-shadow: 0 2px 10px rgba(0,0,0,0.15);
+          color: #333;
         `;
         document.body.prepend(LOG_PANEL);
       }
@@ -43,7 +43,7 @@
       window.logLoad = function(msg, status = 'info') {
         const time = new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit', second:'2-digit'});
         const icons = { ok: '✅', err: '❌', warn: '⚠️', info: 'ℹ️' };
-        const colors = { ok: '#1976d2', err: '#d32f2f', warn: '#ed6c02', info: '#555' };
+        const colors = { ok: '#2e7d32', err: '#c62828', warn: '#ef6c00', info: '#555' };
         
         const icon = icons[status] || icons.info;
         const color = colors[status] || colors.info;
@@ -52,32 +52,22 @@
         line.textContent = `[${time}] ${icon} \${msg}`;
         line.style.color = color;
         line.style.margin = '2px 0';
+        line.style.fontFamily = 'monospace';
         
-        // Добавляем новые логи сверху
         LOG_PANEL.prepend(line);
 
-        // Ограничиваем количество строк (чтобы не забивать память)
-        const maxLines = 60;
+        const maxLines = 80;
         while (LOG_PANEL.children.length > maxLines) {
           LOG_PANEL.lastChild.remove();
         }
       };
 
-      // Сразу логируем факт загрузки самого HTML
-      window.logLoad('HTML загружен, панель логов активна', 'ok');
+      window.logLoad('HTML загружен: панель логов создана принудительно', 'ok');
     })();
   </script>
-
-  <!-- Подключаем скрипты строго ПОСЛЕ определения window.logLoad -->
-  <script type="module" src="config.js"></script>
-  <script type="module" src="camera.js"></script>
-  <script type="module" src="cv-processing.js"></script>
-  <script type="module" src="ui.js"></script>
-  <script type="module" src="app.js"></script>
 </head>
 <body>
 
-  <!-- Основной интерфейс -->
   <header>
     <h1>Замер: Дорн / Матрица</h1>
   </header>
@@ -114,7 +104,6 @@
     </section>
 
     <section class="video-container">
-      <!-- Сюда камера вставит поток -->
       <video id="camera-video" autoplay playsinline muted></video>
       <canvas id="overlay" class="overlay"></canvas>
     </section>
@@ -130,13 +119,43 @@
   </main>
 
   <!-- 
-    МОБИЛЬНАЯ КОНСОЛЬ (ERUDA)
-    Добавляет кнопку в правый нижний угол. Нажав на неё, ты увидишь 
-    полную консоль Chrome (console.log, ошибки, сеть) прямо на телефоне.
-    Это критически важно для отладки OpenCV.js.
+    ERUDA: Мобильная консоль. 
+    Загружаем через динамический импорт, чтобы не блокировать рендер, 
+    но с явным логированием успеха/ошибки.
   -->
-  <script src="https://cdn.jsdelivr.net/npm/eruda"></script>
-  <script>eruda.init();</script>
+  <script>
+    (function() {
+      const script = document.createElement('script');
+      script.src = 'https://cdn.jsdelivr.net/npm/eruda';
+      script.onload = () => {
+        try {
+          eruda.init();
+          if (typeof window.logLoad === 'function') {
+            window.logLoad('Eruda: консоль инициализирована (кнопка внизу справа)', 'ok');
+          }
+        } catch (e) {
+          console.error('Eruda init error:', e);
+          if (typeof window.logLoad === 'function') {
+            window.logLoad('Eruda: ошибка инициализации (см. консоль браузера)', 'err');
+          }
+        }
+      };
+      script.onerror = (err) => {
+        console.error('Eruda script load error:', err);
+        if (typeof window.logLoad === 'function') {
+          window.logLoad('Eruda: не удалось загрузить скрипт (сеть/CORS)', 'err');
+        }
+      };
+      document.body.appendChild(script);
+    })();
+  </script>
+
+  <!-- Модули подключаем ПОСЛЕ того, как logLoad уже точно существует -->
+  <script type="module" src="config.js"></script>
+  <script type="module" src="camera.js"></script>
+  <script type="module" src="cv-processing.js"></script>
+  <script type="module" src="ui.js"></script>
+  <script type="module" src="app.js"></script>
 
 </body>
 </html>
