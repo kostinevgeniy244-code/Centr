@@ -11,17 +11,12 @@
   <body>
     <div class="app">
       <header>
-        
-<!-- Панель логов загрузки -->
-<div class="load-log">
-  <strong>Статус загрузки:</strong>
-  <ul id="load-messages" class="log-list">
-    <!-- Сюда JS будет добавлять строки -->
-  </ul>
-</div>
-
-
-<h1>Замер: Дорн / Матрица</h1>
+        <!-- Панель логов загрузки -->
+        <div class="load-log">
+          <strong>Статус загрузки:</strong>
+          <ul id="load-messages" class="log-list"></ul>
+        </div>
+        <h1>Замер: Дорн / Матрица</h1>
       </header>
 
       <!-- Экран ввода параметров -->
@@ -54,11 +49,9 @@
 
         <div class="video-container">
           <video id="video" autoplay playsinline muted></video>
-          <!-- Оверлей для отрисовки контуров и линий в реальном времени -->
           <canvas id="overlay" class="overlay"></canvas>
         </div>
 
-        <!-- Замороженный кадр (показывается только после фиксации) -->
         <canvas id="frozen-canvas" class="hidden"></canvas>
 
         <div class="controls">
@@ -78,6 +71,19 @@
         </div>
       </section>
     </div>
+
+    <!-- Глобальная функция лога загрузки (доступна до подключения модулей) -->
+    <script>
+      function logLoad(msg, type) {
+        type = type || 'ok';
+        var list = document.getElementById('load-messages');
+        if (!list) return;
+        var li = document.createElement('li');
+        li.textContent = msg;
+        li.className = type;
+        list.appendChild(li);
+      }
+    </script>
 
     <!-- Модульные скрипты -->
     <script type="module" src="config.js"></script>
