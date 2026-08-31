@@ -12,6 +12,9 @@ function logLoad(msg, type = 'ok') {
   list.appendChild(li);
 }
 
+// UI ещё не создан, но функция logLoad уже доступна
+logLoad('ui.js — подключён', 'ok');
+
 const UI = {
   elements: {
     inputScreen: document.getElementById('input-screen'),
