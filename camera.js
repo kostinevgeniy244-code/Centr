@@ -1,8 +1,10 @@
 // camera.js
 
-import { CONFIG } from './config.js';
+if (typeof logLoad === 'function') {
+  logLoad('camera.js — подключён', 'ok');
+}
 
-const Camera = {
+export const Camera = {
   video: null,
   stream: null,
   isRunning: false,
@@ -10,74 +12,85 @@ const Camera = {
   init() {
     this.video = document.getElementById('video');
     if (!this.video) {
-      console.error('❌ Элемент <video id="video"> не найден');
-      return false;
+      console.error('❌ Элемент #video не найден');
+      return;
     }
-    return true;
+    // Сброс состояния
+    this.stream = null;
+    this.isRunning = false;
   },
 
   async start() {
-    if (this.isRunning || this.stream) return;
+    if (this.isRunning) return;
 
     try {
-      this.stream = await navigator.mediaDevices.getUserMedia(
-        CONFIG.CAMERA_CONSTRAINTS
-      );
-      this.video.srcObject = this.stream;
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: {
+          facingMode: 'environment', // тыловая камера по умолчанию
+          width: { ideal: 1280 },
+          height: { ideal: 720 },
+        },
+        audio: false,
+      });
+
+      this.stream = stream;
+      this.video.srcObject = stream;
+
+      // Ждём, пока видео реально начнёт проигрываться (важно для imread в OpenCV)
+      await new Promise((resolve, reject) => {
+        this.video.onloadedmetadata = () => {
+          this.video.play().then(() => {
+            // Небольшая задержка, чтобы кадр успел отрисоваться
+            setTimeout(resolve, 200);
+          }).catch(err => reject(err));
+        };
+        this.video.onerror = err => reject(err);
+      });
+
       this.isRunning = true;
-      console.log('✅ Камера запущена (тыловая)');
+      console.log('✅ Камера запущена');
+      if (typeof logLoad === 'function') {
+        logLoad('Камера — запущена', 'ok');
+      }
     } catch (err) {
       console.error('❌ Ошибка доступа к камере:', err);
-      alert('Не удалось получить доступ к камере. Проверьте разрешения.');
+      if (typeof logLoad === 'function') {
+        logLoad('Камера — ошибка доступа', 'err');
+      }
+      throw err;
     }
   },
 
   stop() {
-    if (this.stream) {
-      this.stream.getTracks().forEach(track => track.stop());
-      this.stream = null;
+    if (!this.stream) return;
+    this.isRunning = false;
+    this.stream.getTracks().forEach(track => track.stop());
+    this.stream = null;
+    if (this.video) {
       this.video.srcObject = null;
-      this.isRunning = false;
-      console.log('🛑 Камера остановлена');
+      this.video.load();
     }
+    console.log('🛑 Камера остановлена');
   },
 
   /**
-   * Захватывает полный кадр из видеопотока в canvas.
-   * Это решает проблему «обрезанного угла»: мы рисуем весь video в canvas,
-   * сохраняя пропорции и полное содержимое кадра.
+   * Захватывает текущий кадр в canvas (полный размер видеоэлемента).
+   * Используется для заморозки кадра.
    */
-  captureFrame(canvas) {
+  captureFrame(canvasEl) {
     if (!this.video || !this.video.videoWidth || !this.video.videoHeight) {
-      console.warn('⚠️ Видеопоток ещё не готов для захвата');
-      return false;
+      console.warn('⚠️ Нет валидного видео для захвата кадра');
+      return;
     }
 
-    const ctx = canvas.getContext('2d');
-    // Важно: устанавливаем размер canvas по реальному размеру видео, а не по CSS
-    canvas.width = this.video.videoWidth;
-    canvas.height = this.video.videoHeight;
+    canvasEl.width = this.video.videoWidth;
+    canvasEl.height = this.video.videoHeight;
 
-    ctx.drawImage(
-      this.video,
-      0,
-      0,
-      this.video.videoWidth,
-      this.video.videoHeight
-    );
+    const ctx = canvasEl.getContext('2d');
+    ctx.drawImage(this.video, 0, 0, canvasEl.width, canvasEl.height);
 
-    return true;
-  },
-
-  getSize() {
-    return {
-      width: this.video?.videoWidth ?? 0,
-      height: this.video?.videoHeight ?? 0,
-    };
+    console.log('📸 Кадр захвачен в canvas');
   },
 };
-
-export { Camera };
-logLoad('camera.js — подключён', 'ok');
 
 // Конец файла
