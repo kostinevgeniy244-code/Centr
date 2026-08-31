@@ -1,4 +1,5 @@
 // app.js
+logLoad('app.js — подключён', 'ok');
 
 import { CONFIG } from './config.js';
 import { Camera } from './camera.js';
@@ -15,7 +16,14 @@ window.onOpenCvLoad = function (opencvModule) {
   console.log('✅ OpenCV загружен');
   CVProcessing.init(opencvModule);
   UI.init();
-  // Камера и интерфейс уже инициализируются по действиям пользователя,
+ window.onOpenCvLoad = function (opencvModule) {
+  console.log('✅ OpenCV загружен');
+  logLoad('OpenCV — готов', 'ok');
+  CVProcessing.init(opencvModule);
+  UI.init();
+};
+
+ // Камера и интерфейс уже инициализируются по действиям пользователя,
   // здесь только подготовка ядра обработки.
 };
 
