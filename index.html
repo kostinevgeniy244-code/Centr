@@ -6,11 +6,6 @@
   <title>Замер: Дорн / Матрица</title>
   <link rel="stylesheet" href="styles.css" />
 
-  <!-- 
-    САМОЕ ВАЖНОЕ: 
-    Этот блок выполняется СРАЗУ при парсинге HTML. 
-    Он гарантирует, что logLoad() существует ДО загрузки любых модулей.
-  -->
   <script>
     (function() {
       const LOG_PANEL_ID = 'log-panel';
@@ -44,16 +39,17 @@
         const time = new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit', second:'2-digit'});
         const icons = { ok: '✅', err: '❌', warn: '⚠️', info: 'ℹ️' };
         const colors = { ok: '#2e7d32', err: '#c62828', warn: '#ef6c00', info: '#555' };
-        
+
         const icon = icons[status] || icons.info;
         const color = colors[status] || colors.info;
 
         const line = document.createElement('div');
+        // ИСПРАВЛЕНИЕ ЗДЕСЬ: было \${msg}, стало \${msg}
         line.textContent = `[${time}] ${icon} \${msg}`;
         line.style.color = color;
         line.style.margin = '2px 0';
         line.style.fontFamily = 'monospace';
-        
+
         LOG_PANEL.prepend(line);
 
         const maxLines = 80;
@@ -87,12 +83,12 @@
       </div>
 
       <div class="form-group">
-        <label for="tol-offset">Допуск смещения, мм (по умолчанию 0.01)</label>
+        <label for="tol-offset">Допуск смещения, мм</label>
         <input type="number" id="tol-offset" value="0.01" step="0.001">
       </div>
 
       <div class="form-group">
-        <label for="tol-uneven">Допуск неравномерности, мм (по умолчанию 0.01)</label>
+        <label for="tol-uneven">Допуск неравномерности, мм</label>
         <input type="number" id="tol-uneven" value="0.01" step="0.001">
       </div>
 
@@ -118,11 +114,6 @@
     </section>
   </main>
 
-  <!-- 
-    ERUDA: Мобильная консоль. 
-    Загружаем через динамический импорт, чтобы не блокировать рендер, 
-    но с явным логированием успеха/ошибки.
-  -->
   <script>
     (function() {
       const script = document.createElement('script');
@@ -131,26 +122,25 @@
         try {
           eruda.init();
           if (typeof window.logLoad === 'function') {
-            window.logLoad('Eruda: консоль инициализирована (кнопка внизу справа)', 'ok');
+            window.logLoad('Eruda: консоль инициализирована', 'ok');
           }
         } catch (e) {
           console.error('Eruda init error:', e);
           if (typeof window.logLoad === 'function') {
-            window.logLoad('Eruda: ошибка инициализации (см. консоль браузера)', 'err');
+            window.logLoad('Eruda: ошибка инициализации', 'err');
           }
         }
       };
       script.onerror = (err) => {
         console.error('Eruda script load error:', err);
         if (typeof window.logLoad === 'function') {
-          window.logLoad('Eruda: не удалось загрузить скрипт (сеть/CORS)', 'err');
+          window.logLoad('Eruda: не удалось загрузить скрипт', 'err');
         }
       };
       document.body.appendChild(script);
     })();
   </script>
 
-  <!-- Модули подключаем ПОСЛЕ того, как logLoad уже точно существует -->
   <script type="module" src="config.js"></script>
   <script type="module" src="camera.js"></script>
   <script type="module" src="cv-processing.js"></script>
