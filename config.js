@@ -44,5 +44,13 @@ const CONFIG = {
 
 // Экспортируем конфигурацию, чтобы другие модули могли её использовать
 export { CONFIG };
+function logLoad(msg, type = 'ok') {
+  const list = document.getElementById('load-messages');
+  if (!list) return;
+  const li = document.createElement('li');
+  li.textContent = msg;
+  li.className = type;
+  list.appendChild(li);
+}
 
 // Конец файла
