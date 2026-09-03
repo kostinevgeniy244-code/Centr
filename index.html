@@ -44,8 +44,11 @@
         const color = colors[status] || colors.info;
 
         const line = document.createElement('div');
-        // ИСПРАВЛЕНИЕ ЗДЕСЬ: было \${msg}, стало \${msg}
-        line.textContent = `[${time}] ${icon} \${msg}`;
+       
+
+line.textContent = `[${time}] ${icon} \${msg}`;
+
+
         line.style.color = color;
         line.style.margin = '2px 0';
         line.style.fontFamily = 'monospace';
