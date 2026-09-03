@@ -12,85 +12,98 @@ export const Camera = {
   init() {
     this.video = document.getElementById('video');
     if (!this.video) {
-      console.error('❌ Элемент #video не найден');
+      console.error('❌ Camera: элемент #video не найден');
+      if (typeof logLoad === 'function') logLoad('Camera: элемент #video не найден', 'err');
       return;
     }
-    // Сброс состояния
-    this.stream = null;
-    this.isRunning = false;
+    if (typeof logLoad === 'function') logLoad('Camera: инициализирован', 'ok');
   },
 
   async start() {
     if (this.isRunning) return;
 
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({
+      const constraints = {
         video: {
-          facingMode: 'environment', // тыловая камера по умолчанию
+          facingMode: 'environment', // тыловая камера на мобильном
           width: { ideal: 1280 },
           height: { ideal: 720 },
         },
-        audio: false,
-      });
+      };
 
-      this.stream = stream;
-      this.video.srcObject = stream;
+      this.stream = await navigator.mediaDevices.getUserMedia(constraints);
+      this.video.srcObject = this.stream;
 
-      // Ждём, пока видео реально начнёт проигрываться (важно для imread в OpenCV)
+      // Ждём, пока видео реально начнёт воспроизводиться
       await new Promise((resolve, reject) => {
-        this.video.onloadedmetadata = () => {
-          this.video.play().then(() => {
-            // Небольшая задержка, чтобы кадр успел отрисоваться
-            setTimeout(resolve, 200);
-          }).catch(err => reject(err));
-        };
-        this.video.onerror = err => reject(err);
+        this.video.addEventListener('loadedmetadata', resolve, { once: true });
+        this.video.addEventListener('error', reject, { once: true });
       });
 
       this.isRunning = true;
-      console.log('✅ Камера запущена');
-      if (typeof logLoad === 'function') {
-        logLoad('Камера — запущена', 'ok');
-      }
+      if (typeof logLoad === 'function') logLoad('Camera: поток запущен, тыловая камера активна', 'ok');
     } catch (err) {
-      console.error('❌ Ошибка доступа к камере:', err);
-      if (typeof logLoad === 'function') {
-        logLoad('Камера — ошибка доступа', 'err');
-      }
+      console.error('❌ Camera: ошибка доступа к камере:', err);
+      if (typeof logLoad === 'function') logLoad('Camera: ошибка доступа к камере', 'err');
       throw err;
     }
   },
 
   stop() {
-    if (!this.stream) return;
+    if (!this.isRunning || !this.stream) return;
+
     this.isRunning = false;
-    this.stream.getTracks().forEach(track => track.stop());
-    this.stream = null;
-    if (this.video) {
+    if (this.video && this.video.srcObject) {
       this.video.srcObject = null;
-      this.video.load();
     }
-    console.log('🛑 Камера остановлена');
+
+    if (this.stream) {
+      this.stream.getTracks().forEach(track => track.stop());
+      this.stream = null;
+    }
+
+    if (typeof logLoad === 'function') logLoad('Camera: остановлен', 'ok');
   },
 
   /**
-   * Захватывает текущий кадр в canvas (полный размер видеоэлемента).
-   * Используется для заморозки кадра.
+   * Захватывает текущий кадр видео и рисует его на целевом canvas.
+   * Учитывает пропорции, чтобы не сплющивать изображение.
    */
   captureFrame(canvasEl) {
     if (!this.video || !this.video.videoWidth || !this.video.videoHeight) {
-      console.warn('⚠️ Нет валидного видео для захвата кадра');
+      console.warn('⚠️ Camera: видео не готово для захвата кадра');
+      if (typeof logLoad === 'function') logLoad('Camera: видео не готово для captureFrame', 'warn');
       return;
     }
 
-    canvasEl.width = this.video.videoWidth;
-    canvasEl.height = this.video.videoHeight;
+    const aspect = this.video.videoWidth / this.video.videoHeight;
+    const canvasWidth = canvasEl.clientWidth;
+    const canvasHeight = canvasEl.clientHeight;
+
+    // Масштабируем, сохраняя пропорции
+    let drawW, drawH;
+    if (canvasWidth / canvasHeight > aspect) {
+      drawH = canvasHeight;
+      drawW = canvasHeight * aspect;
+    } else {
+      drawW = canvasWidth;
+      drawH = canvasWidth / aspect;
+    }
+
+    canvasEl.width = canvasWidth;
+    canvasEl.height = canvasHeight;
 
     const ctx = canvasEl.getContext('2d');
-    ctx.drawImage(this.video, 0, 0, canvasEl.width, canvasEl.height);
+    ctx.clearRect(0, 0, canvasWidth, canvasHeight);
+    ctx.drawImage(
+      this.video,
+      0, 0, this.video.videoWidth, this.video.videoHeight,
+      (canvasWidth - drawW) / 2,
+      (canvasHeight - drawH) / 2,
+      drawW,
+      drawH
+    );
 
-    console.log('📸 Кадр захвачен в canvas');
+    if (typeof logLoad === 'function') logLoad('Camera: кадр захвачен и отрисован на frozenCanvas', 'ok');
   },
 };
-
-// Конец файла
