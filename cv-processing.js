@@ -1,5 +1,3 @@
-// cv-processing.js
-
 if (typeof logLoad === 'function') {
   logLoad('cv-processing.js — подключён', 'ok');
 }
@@ -32,18 +30,22 @@ export const CVProcessing = {
     // Читаем кадр из видео в cv.Mat
     const src = this.cv.imread(videoEl);
     if (src.empty()) {
-      src.delete();
+      cleanupMats([src]);
       return null;
     }
 
     try {
       // 1. Уменьшаем кадр до рабочего разрешения для скорости на мобильном
-      const PROCESS_WIDTH = 320;
-      const PROCESS_HEIGHT = 180;
+      const PROCESS_WIDTH = CONFIG.PROCESS_WIDTH;
+      const PROCESS_HEIGHT = CONFIG.PROCESS_HEIGHT;
 
       const smallSize = new this.cv.Size(PROCESS_WIDTH, PROCESS_HEIGHT);
       const resized = new this.cv.Mat();
       this.cv.resize(src, resized, smallSize, this.cv.INTER_LINEAR);
+
+      // Сохраняем реальные размеры resized для корректной отрисовки
+      const resizedWidth = resized.cols;
+      const resizedHeight = resized.rows;
 
       // 2. Конвертируем в оттенки серого
       const gray = new this.cv.Mat();
@@ -83,8 +85,6 @@ export const CVProcessing = {
 
         if (circularity < CONFIG.CIRCULARITY_THRESHOLD) continue;
 
-        // Подбираем, что это: матрица или дорн — по площади (или по известному диаметру)
-        // Здесь простая эвристика: больший контур — матрица, меньший — дорн
         const candidate = {
           contour: cnt,
           area,
@@ -101,7 +101,6 @@ export const CVProcessing = {
       }
 
       if (!matrixObj || !dornObj) {
-        // Не нашли пару кругов — возвращаем null
         cleanupMats([src, resized, gray, edges, closed, kernel, contours, hierarchy]);
         return null;
       }
@@ -144,7 +143,7 @@ export const CVProcessing = {
       const unevennessMm = Math.abs(matrixDiamMm - dornDiamMm);
 
       // 8. Отрисовка на оверлей-канвасе (в масштабе оригинального видео)
-      this.drawOverlay(overlayCanvas, videoEl, matrixObj, dornObj, scaleMmPerPx);
+      this.drawOverlay(overlayCanvas, videoEl, matrixObj, dornObj, scaleMmPerPx, resizedWidth, resizedHeight);
 
       cleanupMats([src, resized, gray, edges, closed, kernel, contours, hierarchy]);
 
@@ -165,13 +164,13 @@ export const CVProcessing = {
    * Отрисовка контуров, центров и размеров на оверлей-канвасе.
    * Канвас overlayCanvas должен иметь те же размеры, что и videoEl.
    */
-  drawOverlay(canvasEl, videoEl, matrixObj, dornObj, scaleMmPerPx) {
+  drawOverlay(canvasEl, videoEl, matrixObj, dornObj, scaleMmPerPx, resizedW, resizedH) {
     const ctx = canvasEl.getContext('2d');
     ctx.clearRect(0, 0, canvasEl.width, canvasEl.height);
 
-    // Коэффициент масштабирования канваса к рабочему кадру OpenCV
-    const scaleX = canvasEl.width / 320;
-    const scaleY = canvasEl.height / 180;
+    // Динамическое масштабирование под реальные размеры уменьшенного кадра
+    const scaleX = canvasEl.width / resizedW;
+    const scaleY = canvasEl.height / resizedH;
 
     const drawContour = (obj, color, label) => {
       const rect = obj.boundingRect;
@@ -193,12 +192,14 @@ export const CVProcessing = {
       ctx.arc(cx, cy, 6, 0, 2 * Math.PI);
       ctx.fill();
 
-      // Подпись
+      // Подпись рядом с объектом (без стрелок, прямо рядом с местом измерения)
       ctx.fillStyle = '#ffffff';
       ctx.font = '14px Arial';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'top';
-      ctx.fillText(label, cx, cy + 10);
+
+      // Чтобы текст не накладывался, немного сдвигаем его вверх
+      ctx.fillText(label, cx, cy - 16);
     };
 
     drawContour(matrixObj, '#2ecc71', `М: ${matrixObj.boundingRect.width.toFixed(1)}px`);
@@ -214,18 +215,25 @@ export const CVProcessing = {
 
     ctx.strokeStyle = '#f39c12';
     ctx.lineWidth = 2;
+    ctx.setLineDash([5, 5]);
     ctx.beginPath();
     ctx.moveTo(mx, my);
     ctx.lineTo(dx, dy);
     ctx.stroke();
+    ctx.setLineDash([]);
   },
 };
 
 // Вспомогательная функция для очистки cv.Mat (чтобы не было утечек памяти в браузере)
 function cleanupMats(mats) {
+  if (!Array.isArray(mats)) return;
   mats.forEach(mat => {
-    if (mat && !mat.empty()) mat.delete();
+    if (mat && typeof mat.empty === 'function' && !mat.empty()) {
+      try {
+        mat.delete();
+      } catch (e) {
+        console.warn('⚠️ Не удалось удалить cv.Mat:', e);
+      }
+    }
   });
 }
-
-// Конец файла
