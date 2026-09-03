@@ -1,16 +1,13 @@
-// config.js
-
-// Сразу сообщаем в лог, что модуль подключён
 if (typeof logLoad === 'function') {
   logLoad('config.js — подключён', 'ok');
 }
 
 export const CONFIG = {
-  // Фиксированное рабочее разрешение для обработки (баланс скорость/качество на мобильном)
+  // Рабочее разрешение для обработки (баланс скорость/качество на мобильном)
   PROCESS_WIDTH: 320,
   PROCESS_HEIGHT: 180, // aspect 16:9
 
-  // Пороги Canny (подбираются экспериментально под камеру смартфона)
+  // Пороги Canny (подбираются под камеру смартфона)
   CANNY_THRESH_1: 50,
   CANNY_THRESH_2: 120,
 
@@ -31,5 +28,3 @@ export const CONFIG = {
   DEFAULT_TOLERANCE_OFFSET: 0.01,
   DEFAULT_TOLERANCE_UNEVEN: 0.01,
 };
-
-// Конец файла
