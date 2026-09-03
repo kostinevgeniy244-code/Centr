@@ -44,10 +44,9 @@
         const color = colors[status] || colors.info;
 
         const line = document.createElement('div');
-       
 
-line.textContent = `[${time}] ${icon} ${msg}`;
-
+        // ИСПРАВЛЕНО: убран обратный слэш перед ${msg}
+        line.textContent = `[${time}] ${icon} ${msg}`;
 
         line.style.color = color;
         line.style.margin = '2px 0';
@@ -72,51 +71,76 @@ line.textContent = `[${time}] ${icon} ${msg}`;
   </header>
 
   <main>
-    <section class="controls">
+    <!-- Экран 1: ввод параметров -->
+    <section id="input-screen" class="controls">
       <h3>Параметры замера</h3>
-      
+
       <div class="form-group">
-        <label for="matrix-diam">Диаметр матрицы, мм</label>
-        <input type="number" id="matrix-diam" value="20" step="0.01" min="0">
+        <label for="matrix-diameter">Диаметр матрицы, мм</label>
+        <input type="number" id="matrix-diameter" value="20" step="0.01" min="0">
       </div>
 
       <div class="form-group">
-        <label for="dorn-diam">Диаметр дорна, мм</label>
-        <input type="number" id="dorn-diam" value="6" step="0.01" min="0">
+        <label for="dorn-diameter">Диаметр дорна, мм</label>
+        <input type="number" id="dorn-diameter" value="6" step="0.01" min="0">
       </div>
 
       <div class="form-group">
-        <label for="tol-offset">Допуск смещения, мм</label>
-        <input type="number" id="tol-offset" value="0.01" step="0.001">
+        <label for="tolerance-offset">Допуск смещения, мм</label>
+        <input type="number" id="tolerance-offset" value="0.01" step="0.001">
       </div>
 
       <div class="form-group">
-        <label for="tol-uneven">Допуск неравномерности, мм</label>
-        <input type="number" id="tol-uneven" value="0.01" step="0.001">
+        <label for="tolerance-uneven">Допуск неравномерности, мм</label>
+        <input type="number" id="tolerance-uneven" value="0.01" step="0.001">
       </div>
 
       <button id="start-btn" class="btn-primary">Начать замер</button>
     </section>
 
-    <section class="status-bar">
-      <span id="status-text">РЕЖИМ: ОЖИДАНИЕ</span>
+    <!-- Экран 2: камера + замер -->
+    <section id="camera-screen" class="hidden">
+      <section class="status-bar">
+        <span id="status-text">РЕЖИМ: ОЖИДАНИЕ</span>
+        <span class="dot" id="status-dot"></span>
+      </section>
+
+      <section class="video-container">
+        <!-- ИСПРАВЛЕНО: ID совпадает с тем, что ожидает camera.js -->
+        <video id="video" autoplay playsinline muted></video>
+        <canvas id="overlay" class="overlay"></canvas>
+      </section>
+
+      <div style="display:flex; gap:12px; margin-bottom:16px;">
+        <button id="freeze-btn" class="btn-primary" style="flex:1;">Заморозить кадр</button>
+        <button id="reset-btn" class="btn-primary" style="flex:1; background:#7f8c8d;">Сброс</button>
+      </div>
+
+      <section class="results-panel" id="result-panel" class="hidden">
+        <h3>Результаты</h3>
+        <p>Матрица: <span id="res-matrix-diam">--</span> мм</p>
+        <p>Дорн: <span id="res-dorn-diam">--</span> мм</p>
+        <p>Смещение: <span id="res-offset">--</span> мм</p>
+        <p>Неравномерность: <span id="res-uneven">--</span> мм</p>
+        <p class="verdict" id="res-verdict">Статус: --</p>
+      </section>
     </section>
 
-    <section class="video-container">
-      <video id="camera-video" autoplay playsinline muted></video>
-      <canvas id="overlay" class="overlay"></canvas>
-    </section>
-
-    <section class="results-panel" id="results-panel">
-      <h3>Результаты</h3>
-      <p>Матрица: <span id="res-matrix">--</span> мм</p>
-      <p>Дорн: <span id="res-dorn">--</span> мм</p>
-      <p>Смещение: <span id="res-offset">--</span> мм</p>
-      <p>Неравномерность: <span id="res-uneven">--</span> мм</p>
-      <p class="verdict" id="verdict">Статус: --</p>
+    <!-- Экран 3: стоп-кадр (замороженный) -->
+    <section id="frozen-screen" class="hidden">
+      <section class="status-bar">
+        <span id="frozen-status-text">РЕЖИМ: СТОП‑КАДР</span>
+        <span class="dot dot-frozen"></span>
+      </section>
+      <canvas id="frozen-canvas" class="overlay" style="background:#000;"></canvas>
+      <div style="margin-top:16px; display:flex; gap:12px;">
+        <button id="resume-btn" class="btn-primary" style="flex:1;">Продолжить замер</button>
+        <button id="reset-btn-frozen" class="btn-primary" style="flex:1; background:#7f8c8d;">Сброс</button>
+      </div>
     </section>
   </main>
 
+  <!-- Подключаем Eruda для отладки на мобильном -->
   <script>
     (function() {
       const script = document.createElement('script');
@@ -143,6 +167,11 @@ line.textContent = `[${time}] ${icon} ${msg}`;
       document.body.appendChild(script);
     })();
   </script>
+
+  <!-- ВАЖНО: здесь должен быть скрипт OpenCV.js (или ссылка на CDN),
+       иначе CVProcessing не инициализируется. Для первого запуска можно
+       временно закомментировать эти строки, чтобы проверить UI без OpenCV. -->
+  <!-- <script src="opencv.js"></script> -->
 
   <script type="module" src="config.js"></script>
   <script type="module" src="camera.js"></script>
