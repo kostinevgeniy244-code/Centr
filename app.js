@@ -19,10 +19,11 @@ safeLog('app.js — подключён', 'ok');
 let animationFrameId = null;
 let isProcessing = false;
 
-// --- ШАГ 1: Инициализация UI (обязательно до всего остального) ---
+// --- ШАГ 1: Инициализация UI (с передачей Camera!) ---
 if (typeof UI === 'object' && typeof UI.init === 'function') {
-  UI.init();
-  safeLog('UI успешно инициализирован', 'ok');
+  // Передаем Camera внутрь UI, чтобы UI сам управлял камерой
+  UI.init(Camera); 
+  safeLog('UI успешно инициализирован с передачей Camera', 'ok');
 } else {
   safeLog('Ошибка: UI не найден или не имеет метода init', 'err');
 }
@@ -55,7 +56,6 @@ if (typeof window.cv === 'undefined') {
 
   cvScript.onerror = () => {
     safeLog('❌ OpenCV: не удалось загрузить скрипт. Проверьте консоль браузера.', 'err');
-    // Даже без OpenCV мы можем проверить работу UI и камеры
   };
 
   document.head.appendChild(cvScript);
@@ -76,10 +76,9 @@ function onCvReady(cvModule) {
 }
 
 // --- ШАГ 3: Перехват кнопки "Начать замер" ---
-// Делаем это только после того, как UI точно инициализирован
+// Теперь это работает, потому что UI уже инициализирован и знает про Camera
 if (typeof UI === 'object' && UI.elements && UI.elements.startBtn) {
-  // Примечание: в предыдущем коде кнопка была без ID, ищем по селектору, если ID нет
-  let startBtn = UI.elements.startBtn || document.getElementById('start-btn');
+  const startBtn = UI.elements.startBtn;
   
   if (startBtn) {
     startBtn.addEventListener('click', () => {
@@ -89,7 +88,6 @@ if (typeof UI === 'object' && UI.elements && UI.elements.startBtn) {
         UI.handleStart();
         safeLog('UI.handleStart вызван', 'ok');
         
-        // Запускаем цикл обработки с небольшой задержкой, чтобы камера успела стартовать
         setTimeout(() => {
           if (!animationFrameId) {
             startProcessingLoop();
@@ -109,7 +107,6 @@ if (typeof UI === 'object' && UI.elements && UI.elements.startBtn) {
 
 // --- Основной цикл обработки кадров ---
 function processLoop() {
-  // Если UI в режиме FROZEN — пропускаем обработку, но продолжаем цикл
   if (typeof UI === 'object' && UI.currentState === UI.STATE.FROZEN) {
     animationFrameId = requestAnimationFrame(processLoop);
     return;
@@ -128,7 +125,6 @@ function processLoop() {
         return;
       }
 
-      // Читаем параметры
       const matrixDiameter = parseFloat(videoEl.dataset.matrixDiameter) || 0;
       const dornDiameter = parseFloat(videoEl.dataset.dornDiameter) || 0;
       const toleranceOffset = parseFloat(videoEl.dataset.toleranceOffset) || CONFIG.DEFAULT_TOLERANCE_OFFSET;
@@ -170,7 +166,6 @@ function processLoop() {
             }
           }
         } else {
-          // Объекты не найдены
           if (typeof UI === 'object' && UI.elements && UI.elements.resultPanel) {
             UI.elements.resultPanel.classList.add('hidden');
             if (UI.currentState !== UI.STATE.SEARCH) {
@@ -199,7 +194,6 @@ function startProcessingLoop() {
   safeLog('Цикл обработки кадров запущен', 'ok');
 }
 
-// --- Очистка при уходе со страницы ---
 window.addEventListener('beforeunload', () => {
   if (animationFrameId) cancelAnimationFrame(animationFrameId);
   if (typeof Camera === 'object' && typeof Camera.stop === 'function') {
