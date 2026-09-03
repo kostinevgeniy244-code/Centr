@@ -1,5 +1,3 @@
-// ui.js
-
 if (typeof logLoad === 'function') {
   logLoad('ui.js — подключён', 'ok');
 }
@@ -18,13 +16,16 @@ export const UI = {
     this.elements = {
       inputScreen: document.getElementById('input-screen'),
       cameraScreen: document.getElementById('camera-screen'),
+      frozenScreen: document.getElementById('frozen-screen'), // новый экран стоп‑кадра
       statusText: document.getElementById('status-text'),
       statusDot: document.getElementById('status-dot'),
       video: document.getElementById('video'),
       overlay: document.getElementById('overlay'),
       frozenCanvas: document.getElementById('frozen-canvas'),
       freezeBtn: document.getElementById('freeze-btn'),
-      resetBtn: document.getElementById('reset-btn'),
+      resetBtn: document.getElementById('reset-btn'),          // сброс из режима камеры
+      resumeBtn: document.getElementById('resume-btn'),       // продолжить замер из стоп‑кадра
+      resetBtnFrozen: document.getElementById('reset-btn-frozen'), // сброс из стоп‑кадра
       resultPanel: document.getElementById('result-panel'),
       resMatrixDiam: document.getElementById('res-matrix-diam'),
       resDornDiam: document.getElementById('res-dorn-diam'),
@@ -46,9 +47,20 @@ export const UI = {
     }
 
     // Навешиваем обработчики событий
-    document.getElementById('start-btn').addEventListener('click', () => this.handleStart());
+    const startBtn = document.getElementById('start-btn');
+    if (startBtn) {
+      startBtn.addEventListener('click', () => this.handleStart());
+    }
     this.elements.freezeBtn.addEventListener('click', () => this.handleFreeze());
     this.elements.resetBtn.addEventListener('click', () => this.handleReset());
+
+    // Обработчики для экрана стоп‑кадра (если элементы существуют)
+    if (this.elements.resumeBtn) {
+      this.elements.resumeBtn.addEventListener('click', () => this.handleResume());
+    }
+    if (this.elements.resetBtnFrozen) {
+      this.elements.resetBtnFrozen.addEventListener('click', () => this.handleReset());
+    }
 
     // Устанавливаем начальное состояние
     this.currentState = this.STATE.SEARCH;
@@ -83,6 +95,12 @@ export const UI = {
     // Переключаем экраны
     this.elements.inputScreen.classList.add('hidden');
     this.elements.cameraScreen.classList.remove('hidden');
+    if (this.elements.frozenScreen) {
+      this.elements.frozenScreen.classList.add('hidden');
+    }
+
+    // Сбрасываем результаты
+    this.clearResults();
 
     // Запускаем камеру
     Camera.init();
@@ -100,17 +118,38 @@ export const UI = {
 
     Camera.captureFrame(this.elements.frozenCanvas);
 
-    // Скрываем видео и оверлей, показываем замороженный кадр
-    this.elements.video.style.display = 'none';
-    this.elements.overlay.style.display = 'none';
-    this.elements.frozenCanvas.classList.remove('hidden');
-    this.elements.frozenCanvas.style.display = 'block';
+    // Скрываем экран камеры, показываем стоп‑кадр
+    this.elements.cameraScreen.classList.add('hidden');
+    if (this.elements.frozenScreen) {
+      this.elements.frozenScreen.classList.remove('hidden');
+    }
 
     this.currentState = this.STATE.FROZEN;
     this.updateStatusUI();
 
-    // Блокируем кнопку фиксации, включаем сброс
+    // Блокируем кнопку фиксации, включаем сброс и «продолжить»
     this.elements.freezeBtn.disabled = true;
+    if (this.elements.resumeBtn) this.elements.resumeBtn.disabled = false;
+    if (this.elements.resetBtnFrozen) this.elements.resetBtnFrozen.disabled = false;
+  },
+
+  /**
+   * Возвращает режим поиска (после стоп‑кадра): показывает камеру, скрывает стоп‑кадр.
+   */
+  handleResume() {
+    if (this.elements.frozenScreen) {
+      this.elements.frozenScreen.classList.add('hidden');
+    }
+    this.elements.cameraScreen.classList.remove('hidden');
+
+    this.currentState = this.STATE.SEARCH;
+    this.updateStatusUI();
+
+    // Разблокируем кнопку заморозки
+    this.elements.freezeBtn.disabled = false;
+
+    // Очищаем результаты (опционально — можно оставить последние)
+    this.clearResults();
   },
 
   /**
@@ -123,86 +162,67 @@ export const UI = {
     // Возвращаем экраны
     this.elements.inputScreen.classList.remove('hidden');
     this.elements.cameraScreen.classList.add('hidden');
+    if (this.elements.frozenScreen) {
+      this.elements.frozenScreen.classList.add('hidden');
+    }
 
     // Очищаем замороженный кадр
-    this.elements.frozenCanvas.width = 0;
-    this.elements.frozenCanvas.height = 0;
-    this.elements.frozenCanvas.classList.add('hidden');
-    this.elements.frozenCanvas.style.display = '';
+    const fc = this.elements.frozenCanvas;
+    fc.width = 0;
+    fc.height = 0;
 
-    // Показываем видео и оверлей
-    this.elements.video.style.display = 'block';
-    this.elements.overlay.style.display = '';
-
-    // Сбрасываем UI статуса
+    // Сбрасываем состояние
     this.currentState = this.STATE.SEARCH;
     this.updateStatusUI();
 
     // Разблокируем кнопки
     this.elements.freezeBtn.disabled = false;
-    this.elements.resultPanel.classList.add('hidden');
+    if (this.elements.resumeBtn) this.elements.resumeBtn.disabled = true;
+    if (this.elements.resetBtnFrozen) this.elements.resetBtnFrozen.disabled = true;
+
+    // Очищаем результаты
+    this.clearResults();
+
+    if (typeof logLoad === 'function') {
+      logLoad('UI — полный сброс выполнен', 'ok');
+    }
   },
 
-  /**
-   * Обновляет текст статуса и цвет индикатора (точки).
-   */
+  clearResults() {
+    this.elements.resMatrixDiam.textContent = '--';
+    this.elements.resDornDiam.textContent = '--';
+    this.elements.resOffset.textContent = '--';
+    this.elements.resUneven.textContent = '--';
+    this.elements.resVerdict.textContent = 'Статус: --';
+  },
+
   updateStatusUI() {
-    const textMap = {
-      [this.STATE.SEARCH]: 'РЕЖИМ: ПОИСК',
-      [this.STATE.LOCKED]: 'РЕЖИМ: ЗАХВАТ',
-      [this.STATE.FROZEN]: 'РЕЖИМ: СТОП‑КАДР',
-    };
+    let text = '';
+    let dotColor = '#ccc';
 
-    const dotClassMap = {
-      [this.STATE.SEARCH]: 'dot-search',
-      [this.STATE.LOCKED]: 'dot-locked',
-      [this.STATE.FROZEN]: 'dot-frozen',
-    };
-
-    this.elements.statusText.textContent = textMap[this.currentState] || 'РЕЖИМ: НЕИЗВЕСТЕН';
-
-    this.elements.statusDot.className = 'dot ' + (dotClassMap[this.currentState] || '');
-  },
-
-  /**
-   * Выводит результаты замера на экран.
-   */
-  showResults(result) {
-    if (!result) return;
-
-    this.elements.resMatrixDiam.textContent = result.matrixDiam.toFixed(3);
-    this.elements.resDornDiam.textContent = result.dornDiam.toFixed(3);
-    this.elements.resOffset.textContent = result.offset.toFixed(3);
-    this.elements.resUneven.textContent = result.unevenness.toFixed(3);
-
-    // Простой вердикт
-    const verdictEl = this.elements.resVerdict;
-    verdictEl.className = 'verdict';
-    let verdictText = 'В допуске';
-    let isGood = true;
-
-    const params = {
-      offset: parseFloat(this.elements.video.dataset.toleranceOffset),
-      uneven: parseFloat(this.elements.video.dataset.toleranceUneven),
-    };
-
-    if (result.offset > params.offset) {
-      verdictText = 'Смещение вне допуска';
-      isGood = false;
-    } else if (result.unevenness > params.uneven) {
-      verdictText = 'Неравномерность вне допуска';
-      isGood = false;
+    switch (this.currentState) {
+      case this.STATE.SEARCH:
+        text = 'РЕЖИМ: ОЖИДАНИЕ / ПОИСК';
+        dotColor = '#3498db'; // синий
+        break;
+      case this.STATE.LOCKED:
+        text = 'РЕЖИМ: ЗАМОРОЖЕН (в разработке)';
+        dotColor = '#f39c12'; // оранжевый
+        break;
+      case this.STATE.FROZEN:
+        text = 'РЕЖИМ: СТОП‑КАДР';
+        dotColor = '#e74c3c'; // красный
+        break;
+      default:
+        text = 'РЕЖИМ: НЕИЗВЕСТЕН';
+        dotColor = '#95a5a6';
     }
 
-    verdictEl.textContent = verdictText;
-    if (isGood) {
-      verdictEl.classList.add('good');
-    } else {
-      verdictEl.classList.add('bad');
+    if (this.elements.statusText) {
+      this.elements.statusText.textContent = text;
     }
-
-    this.elements.resultPanel.classList.remove('hidden');
+    if (this.elements.statusDot) {
+      this.elements.statusDot.style.backgroundColor = dotColor;
+    }
   },
 };
-
-// Конец файла
