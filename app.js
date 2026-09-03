@@ -4,15 +4,13 @@ import { CVProcessing } from './cv-processing.js';
 import { UI } from './ui.js';
 
 const safeLog = (msg, status = 'info') => {
-  try {
-    if (typeof window.logLoad === 'function') {
-      window.logLoad(msg, status);
-    } else {
-      const prefix = status === 'ok' ? '✅' : status === 'err' ? '❌' : 'ℹ️';
-      console.log(`[APP] ${prefix} ${msg}`);
-    }
-  } catch (e) {
-    console.error('[APP] Ошибка при попытке записать лог:', e);
+  const prefix = status === 'ok' ? '✅' : status === 'err' ? '❌' : 'ℹ️';
+  const logMsg = `[APP] ${prefix} ${msg}`;
+  
+  if (typeof window.logLoad === 'function') {
+    window.logLoad(logMsg, status);
+  } else {
+    console.log(logMsg);
   }
 };
 
@@ -21,26 +19,31 @@ safeLog('app.js — подключён', 'ok');
 let animationFrameId = null;
 let isProcessing = false;
 
-// --- Загрузка OpenCV.js ---
-// Если OpenCV ещё не подключён, подключаем через CDN
+// --- ШАГ 1: Инициализация UI (обязательно до всего остального) ---
+if (typeof UI === 'object' && typeof UI.init === 'function') {
+  UI.init();
+  safeLog('UI успешно инициализирован', 'ok');
+} else {
+  safeLog('Ошибка: UI не найден или не имеет метода init', 'err');
+}
+
+// --- ШАГ 2: Загрузка OpenCV ---
 if (typeof window.cv === 'undefined') {
-  safeLog('OpenCV: загружаю через CDN...', 'info');
+  safeLog('OpenCV: не найден, загружаю через CDN...', 'info');
   const cvScript = document.createElement('script');
   cvScript.src = 'https://docs.opencv.org/4.8.0/opencv.js';
   cvScript.async = true;
 
   cvScript.onload = () => {
-    safeLog('OpenCV: скрипт загружен, ожидаю инициализацию WASM...', 'info');
-    // OpenCV.js выставляет cv.Module — ждём onRuntimeInitialized
+    safeLog('OpenCV: скрипт загружен, ожидаю WASM...', 'info');
+    
     if (window.cv && typeof window.cv.onRuntimeInitialized === 'undefined') {
       window.cv.onRuntimeInitialized = () => {
         onCvReady(window.cv);
       };
     } else if (window.cv && window.cv.Mat) {
-      // Уже готов
       onCvReady(window.cv);
     } else {
-      // Fallback: polling
       const checkReady = setInterval(() => {
         if (window.cv && window.cv.Mat) {
           clearInterval(checkReady);
@@ -51,34 +54,62 @@ if (typeof window.cv === 'undefined') {
   };
 
   cvScript.onerror = () => {
-    safeLog('OpenCV: не удалось загрузить скрипт', 'err');
+    safeLog('❌ OpenCV: не удалось загрузить скрипт. Проверьте консоль браузера.', 'err');
+    // Даже без OpenCV мы можем проверить работу UI и камеры
   };
 
   document.head.appendChild(cvScript);
 } else if (window.cv && window.cv.Mat) {
-  // Уже загружен ранее
+  safeLog('OpenCV: уже загружен в DOM', 'ok');
   onCvReady(window.cv);
 }
 
 function onCvReady(cvModule) {
-  safeLog('OpenCV — готов к работе', 'ok');
+  safeLog('OpenCV — полностью готов к работе', 'ok');
 
   if (typeof CVProcessing === 'object' && typeof CVProcessing.init === 'function') {
     CVProcessing.init(cvModule);
+    safeLog('CVProcessing инициализирован', 'ok');
   } else {
-    safeLog('Ошибка: CVProcessing не найден или не имеет метода init', 'err');
+    safeLog('Ошибка: CVProcessing не найден', 'err');
   }
+}
 
-  if (typeof UI === 'object' && typeof UI.init === 'function') {
-    UI.init();
+// --- ШАГ 3: Перехват кнопки "Начать замер" ---
+// Делаем это только после того, как UI точно инициализирован
+if (typeof UI === 'object' && UI.elements && UI.elements.startBtn) {
+  // Примечание: в предыдущем коде кнопка была без ID, ищем по селектору, если ID нет
+  let startBtn = UI.elements.startBtn || document.getElementById('start-btn');
+  
+  if (startBtn) {
+    startBtn.addEventListener('click', () => {
+      safeLog('Пользователь нажал кнопку "Начать замер"', 'info');
+      
+      if (typeof UI.handleStart === 'function') {
+        UI.handleStart();
+        safeLog('UI.handleStart вызван', 'ok');
+        
+        // Запускаем цикл обработки с небольшой задержкой, чтобы камера успела стартовать
+        setTimeout(() => {
+          if (!animationFrameId) {
+            startProcessingLoop();
+          }
+        }, 600);
+      } else {
+        safeLog('Ошибка: UI.handleStart не найден', 'err');
+      }
+    });
+    safeLog('Обработчик клика на кнопке "Начать замер" установлен', 'ok');
   } else {
-    safeLog('Ошибка: UI не найден или не имеет метода init', 'err');
+    safeLog('Ошибка: элемент кнопки старта не найден в DOM', 'err');
   }
+} else {
+  safeLog('Ошибка: UI.elements или startBtn не готовы', 'err');
 }
 
 // --- Основной цикл обработки кадров ---
 function processLoop() {
-  // Если UI в режиме FROZEN — пропускаем, просто ждём
+  // Если UI в режиме FROZEN — пропускаем обработку, но продолжаем цикл
   if (typeof UI === 'object' && UI.currentState === UI.STATE.FROZEN) {
     animationFrameId = requestAnimationFrame(processLoop);
     return;
@@ -91,20 +122,20 @@ function processLoop() {
       const overlayCanvas = document.getElementById('overlay');
 
       if (!videoEl || !overlayCanvas) {
-        safeLog('Ошибка: video или overlay не найдены', 'err');
+        safeLog('Ошибка: video или overlay не найдены в DOM', 'err');
         isProcessing = false;
         animationFrameId = requestAnimationFrame(processLoop);
         return;
       }
 
-      // Читаем параметры: сначала из dataset, потом fallback на инпуты
+      // Читаем параметры
       const matrixDiameter = parseFloat(videoEl.dataset.matrixDiameter) || 0;
       const dornDiameter = parseFloat(videoEl.dataset.dornDiameter) || 0;
       const toleranceOffset = parseFloat(videoEl.dataset.toleranceOffset) || CONFIG.DEFAULT_TOLERANCE_OFFSET;
       const toleranceUneven = parseFloat(videoEl.dataset.toleranceUneven) || CONFIG.DEFAULT_TOLERANCE_UNEVEN;
 
       if (!matrixDiameter || !dornDiameter) {
-        // Параметры ещё не заданы — пропускаем
+        safeLog('Параметры ещё не заданы (matrixDiameter/dornDiameter)', 'info');
         isProcessing = false;
         animationFrameId = requestAnimationFrame(processLoop);
         return;
@@ -152,8 +183,8 @@ function processLoop() {
         safeLog('Ошибка: CVProcessing.processFrame не найден', 'err');
       }
     } catch (err) {
-      console.error('❌ Критическая ошибка в цикле обработки:', err);
-      safeLog('Ошибка в processLoop: ' + err.message, 'err');
+      console.error('❌ Критическая ошибка в processLoop:', err);
+      safeLog('Ошибка в цикле обработки: ' + err.message, 'err');
     } finally {
       isProcessing = false;
     }
@@ -168,25 +199,6 @@ function startProcessingLoop() {
   safeLog('Цикл обработки кадров запущен', 'ok');
 }
 
-// --- Перехват кнопки старта ---
-// Ждём, пока UI инициализируется, потом перехватываем handleStart
-const waitForUI = setInterval(() => {
-  if (typeof UI === 'object' && typeof UI.handleStart === 'function' && UI.elements && UI.elements.video) {
-    clearInterval(waitForUI);
-
-    const originalStart = UI.handleStart.bind(UI);
-
-    UI.handleStart = function () {
-      safeLog('Пользователь нажал "Начать замер"', 'info');
-      originalStart();
-      // Даём камере время на запуск
-      setTimeout(startProcessingLoop, 500);
-    };
-
-    safeLog('Перехват UI.handleStart выполнен', 'ok');
-  }
-}, 200);
-
 // --- Очистка при уходе со страницы ---
 window.addEventListener('beforeunload', () => {
   if (animationFrameId) cancelAnimationFrame(animationFrameId);
@@ -195,4 +207,4 @@ window.addEventListener('beforeunload', () => {
   }
 });
 
-console.log('✅ app.js полностью загружен. Ожидание OpenCV и действий пользователя.');
+console.log('✅ app.js полностью загружен. Ожидание действий пользователя.');
